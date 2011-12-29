@@ -94,6 +94,7 @@ struct pci_device_mapping {
 struct pci_io_handle {
     pciaddr_t base;
     pciaddr_t size;
+    void *memory;
     int fd;
 };
 
