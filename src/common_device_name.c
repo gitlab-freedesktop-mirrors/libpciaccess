@@ -269,7 +269,7 @@ populate_vendor( struct pci_id_leaf * vend, int fill_device_data )
 	    d = realloc( vend->devices, (vend->num_devices + 1)
 			 * sizeof( struct pci_device_leaf ) );
 	    if ( d == NULL ) {
-		return;
+		goto cleanup;
 	    }
 
 	    last_dev = & d[ vend->num_devices - 1 ];
@@ -302,6 +302,7 @@ populate_vendor( struct pci_id_leaf * vend, int fill_device_data )
 	}
     }
 
+  cleanup:
     pci_id_file_close( f );
 }
 
