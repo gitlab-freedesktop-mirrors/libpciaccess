@@ -126,48 +126,6 @@ static di_prom_handle_t di_phdl;
 # define U45_SB_CLASS_RID	0x06040000
 #endif
 
-static int pci_device_solx_devfs_map_range(struct pci_device *dev,
-    struct pci_device_mapping *map);
-
-static int pci_device_solx_devfs_read_rom( struct pci_device * dev,
-    void * buffer );
-
-static int pci_device_solx_devfs_probe( struct pci_device * dev );
-
-static int pci_device_solx_devfs_read( struct pci_device * dev, void * data,
-    pciaddr_t offset, pciaddr_t size, pciaddr_t * bytes_read );
-
-static int pci_device_solx_devfs_write( struct pci_device * dev,
-    const void * data, pciaddr_t offset, pciaddr_t size,
-    pciaddr_t * bytes_written );
-
-static int probe_dev(nexus_t *nexus, pcitool_reg_t *prg_p, probe_info_t *pinfo);
-
-static int do_probe(nexus_t *nexus, probe_info_t *pinfo);
-
-static int probe_nexus_node(di_node_t di_node, di_minor_t minor, void *arg);
-
-static void pci_system_solx_devfs_destroy( void );
-
-static int get_config_header(int fd, uint8_t bus_no, uint8_t dev_no,
-			     uint8_t func_no, pci_conf_hdr_t *config_hdr_p);
-
-int pci_system_solx_devfs_create( void );
-
-static const struct pci_system_methods solx_devfs_methods = {
-    .destroy = pci_system_solx_devfs_destroy,
-    .destroy_device = NULL,
-    .read_rom = pci_device_solx_devfs_read_rom,
-    .probe = pci_device_solx_devfs_probe,
-    .map_range = pci_device_solx_devfs_map_range,
-    .unmap_range = pci_device_generic_unmap_range,
-
-    .read = pci_device_solx_devfs_read,
-    .write = pci_device_solx_devfs_write,
-
-    .fill_capabilities = pci_fill_capabilities_generic
-};
-
 #ifdef __sparc
 static nexus_t *
 find_nexus_for_dev(struct pci_device *dev)
@@ -253,61 +211,6 @@ pci_system_solx_devfs_destroy( void )
 	xsvc_fd = -1;
     }
 #endif
-}
-
-/*
- * Attempt to access PCI subsystem using Solaris's devfs interface.
- * Solaris version
- */
-_pci_hidden int
-pci_system_solx_devfs_create( void )
-{
-    int err = 0;
-    di_node_t di_node;
-    probe_info_t pinfo;
-    struct pci_device_private *devices;
-
-    if (nexus_list != NULL) {
-	return 0;
-    }
-
-    if ((di_node = di_init("/", DINFOCPYALL)) == DI_NODE_NIL) {
-	err = errno;
-	(void) fprintf(stderr, "di_init() failed: %s\n",
-		       strerror(errno));
-	return (err);
-    }
-
-    if ((devices = calloc(INITIAL_NUM_DEVICES,
-			sizeof (struct pci_device_private))) == NULL) {
-	err = errno;
-	di_fini(di_node);
-	return (err);
-    }
-
-#ifdef __sparc
-    if ((di_phdl = di_prom_init()) == DI_PROM_HANDLE_NIL)
-	(void) fprintf(stderr, "di_prom_init failed: %s\n", strerror(errno));
-#endif
-
-    pinfo.num_allocated_elems = INITIAL_NUM_DEVICES;
-    pinfo.num_devices = 0;
-    pinfo.devices = devices;
-    (void) di_walk_minor(di_node, DDI_NT_REGACC, 0, &pinfo, probe_nexus_node);
-
-    di_fini(di_node);
-
-    if ((pci_sys = calloc(1, sizeof (struct pci_system))) == NULL) {
-	err = errno;
-	free(devices);
-	return (err);
-    }
-
-    pci_sys->methods = &solx_devfs_methods;
-    pci_sys->devices = pinfo.devices;
-    pci_sys->num_devices = pinfo.num_devices;
-
-    return (err);
 }
 
 /*
@@ -562,6 +465,64 @@ probe_dev(nexus_t *nexus, pcitool_reg_t *prg_p, probe_info_t *pinfo)
     return (rval);
 }
 
+
+/*
+ * Solaris version
+ * Probe a given nexus config space for devices.
+ *
+ * fd is the file descriptor of the nexus.
+ * input_args contains commandline options as specified by the user.
+ */
+static int
+do_probe(nexus_t *nexus, probe_info_t *pinfo)
+{
+    pcitool_reg_t prg;
+    uint32_t bus;
+    uint8_t dev;
+    uint32_t last_bus = nexus->last_bus;
+    uint8_t last_dev = PCI_REG_DEV_M >> PCI_REG_DEV_SHIFT;
+    uint8_t first_bus = nexus->first_bus;
+    uint8_t first_dev = 0;
+    int rval = 0;
+
+    prg.barnum = 0;	/* Config space. */
+
+    /* Must read in 4-byte quantities. */
+    prg.acc_attr = PCITOOL_ACC_ATTR_SIZE_4 + NATIVE_ENDIAN;
+
+    prg.data = 0;
+
+    /*
+     * Loop through all valid bus / dev / func combinations to check for
+     * all devices, with the following exceptions:
+     *
+     * When nothing is found at function 0 of a bus / dev combination, skip
+     * the other functions of that bus / dev combination.
+     *
+     * When a found device's function 0 is probed and it is determined that
+     * it is not a multifunction device, skip probing of that device's
+     * other functions.
+     */
+    for (bus = first_bus; ((bus <= last_bus) && (rval == 0)); bus++) {
+	prg.bus_no = (uint8_t)bus;
+
+	for (dev = first_dev; ((dev <= last_dev) && (rval == 0)); dev++) {
+	    prg.dev_no = dev;
+	    rval = probe_dev(nexus, &prg, pinfo);
+	}
+
+	/*
+	 * Ultra-45 southbridge workaround:
+	 * ECANCELED tells to skip to the next bus.
+	 */
+	if (rval == ECANCELED) {
+	    rval = 0;
+	}
+    }
+
+    return (rval);
+}
+
 /*
  * This function is called from di_walk_minor() when any PROBE is processed
  */
@@ -726,64 +687,6 @@ probe_nexus_node(di_node_t di_node, di_minor_t minor, void *arg)
     }
 
     return DI_WALK_CONTINUE;
-}
-
-
-/*
- * Solaris version
- * Probe a given nexus config space for devices.
- *
- * fd is the file descriptor of the nexus.
- * input_args contains commandline options as specified by the user.
- */
-static int
-do_probe(nexus_t *nexus, probe_info_t *pinfo)
-{
-    pcitool_reg_t prg;
-    uint32_t bus;
-    uint8_t dev;
-    uint32_t last_bus = nexus->last_bus;
-    uint8_t last_dev = PCI_REG_DEV_M >> PCI_REG_DEV_SHIFT;
-    uint8_t first_bus = nexus->first_bus;
-    uint8_t first_dev = 0;
-    int rval = 0;
-
-    prg.barnum = 0;	/* Config space. */
-
-    /* Must read in 4-byte quantities. */
-    prg.acc_attr = PCITOOL_ACC_ATTR_SIZE_4 + NATIVE_ENDIAN;
-
-    prg.data = 0;
-
-    /*
-     * Loop through all valid bus / dev / func combinations to check for
-     * all devices, with the following exceptions:
-     *
-     * When nothing is found at function 0 of a bus / dev combination, skip
-     * the other functions of that bus / dev combination.
-     *
-     * When a found device's function 0 is probed and it is determined that
-     * it is not a multifunction device, skip probing of that device's
-     * other functions.
-     */
-    for (bus = first_bus; ((bus <= last_bus) && (rval == 0)); bus++) {
-	prg.bus_no = (uint8_t)bus;
-
-	for (dev = first_dev; ((dev <= last_dev) && (rval == 0)); dev++) {
-	    prg.dev_no = dev;
-	    rval = probe_dev(nexus, &prg, pinfo);
-	}
-
-	/*
-	 * Ultra-45 southbridge workaround:
-	 * ECANCELED tells to skip to the next bus.
-	 */
-	if (rval == ECANCELED) {
-	    rval = 0;
-	}
-    }
-
-    return (rval);
 }
 
 static int
@@ -1002,6 +905,70 @@ pci_device_solx_devfs_probe( struct pci_device * dev )
     return (err);
 }
 
+/**
+ * Map a memory region for a device using /dev/xsvc.
+ *
+ * \param dev   Device whose memory region is to be mapped.
+ * \param map   Parameters of the mapping that is to be created.
+ *
+ * \return
+ * Zero on success or an \c errno value on failure.
+ */
+static int
+pci_device_solx_devfs_map_range(struct pci_device *dev,
+				struct pci_device_mapping *map)
+{
+    const int prot = ((map->flags & PCI_DEV_MAP_FLAG_WRITABLE) != 0)
+			? (PROT_READ | PROT_WRITE) : PROT_READ;
+    int err = 0;
+
+#ifdef __sparc
+    char	map_dev[128];
+    int		map_fd;
+
+    if (MAPPING_DEV_PATH(dev))
+	snprintf(map_dev, sizeof (map_dev), "%s%s", "/devices", MAPPING_DEV_PATH(dev));
+    else
+	strcpy (map_dev, "/dev/fb0");
+
+    if ((map_fd = open(map_dev, O_RDWR)) < 0) {
+	err = errno;
+	(void) fprintf(stderr, "can not open %s: %s\n", map_dev,
+			   strerror(errno));
+	return err;
+    }
+
+    map->memory = mmap(NULL, map->size, prot, MAP_SHARED, map_fd, map->base);
+#else
+    /*
+     * Still used xsvc to do the user space mapping
+     */
+    if (xsvc_fd < 0) {
+	if ((xsvc_fd = open("/dev/xsvc", O_RDWR)) < 0) {
+	    err = errno;
+	    (void) fprintf(stderr, "can not open /dev/xsvc: %s\n",
+			   strerror(errno));
+	    return err;
+	}
+    }
+
+    map->memory = mmap(NULL, map->size, prot, MAP_SHARED, xsvc_fd, map->base);
+#endif
+
+    if (map->memory == MAP_FAILED) {
+	err = errno;
+
+	(void) fprintf(stderr, "map rom region =%llx failed: %s\n",
+		       map->base, strerror(errno));
+    }
+
+#ifdef __sparc
+    close (map_fd);
+#endif
+
+    return err;
+}
+
 /*
  * Solaris version: read the VGA ROM data
  */
@@ -1156,66 +1123,72 @@ pci_device_solx_devfs_write( struct pci_device * dev, const void * data,
 }
 
 
-/**
- * Map a memory region for a device using /dev/xsvc.
- *
- * \param dev   Device whose memory region is to be mapped.
- * \param map   Parameters of the mapping that is to be created.
- *
- * \return
- * Zero on success or an \c errno value on failure.
+
+static const struct pci_system_methods solx_devfs_methods = {
+    .destroy = pci_system_solx_devfs_destroy,
+    .destroy_device = NULL,
+    .read_rom = pci_device_solx_devfs_read_rom,
+    .probe = pci_device_solx_devfs_probe,
+    .map_range = pci_device_solx_devfs_map_range,
+    .unmap_range = pci_device_generic_unmap_range,
+
+    .read = pci_device_solx_devfs_read,
+    .write = pci_device_solx_devfs_write,
+
+    .fill_capabilities = pci_fill_capabilities_generic
+};
+
+/*
+ * Attempt to access PCI subsystem using Solaris's devfs interface.
+ * Solaris version
  */
-static int
-pci_device_solx_devfs_map_range(struct pci_device *dev,
-				struct pci_device_mapping *map)
+_pci_hidden int
+pci_system_solx_devfs_create( void )
 {
-    const int prot = ((map->flags & PCI_DEV_MAP_FLAG_WRITABLE) != 0)
-			? (PROT_READ | PROT_WRITE) : PROT_READ;
     int err = 0;
+    di_node_t di_node;
+    probe_info_t pinfo;
+    struct pci_device_private *devices;
 
-#ifdef __sparc
-    char	map_dev[128];
-    int		map_fd;
-
-    if (MAPPING_DEV_PATH(dev))
-	snprintf(map_dev, sizeof (map_dev), "%s%s", "/devices", MAPPING_DEV_PATH(dev));
-    else
-	strcpy (map_dev, "/dev/fb0");
-
-    if ((map_fd = open(map_dev, O_RDWR)) < 0) {
-	err = errno;
-	(void) fprintf(stderr, "can not open %s: %s\n", map_dev,
-			   strerror(errno));
-	return err;
+    if (nexus_list != NULL) {
+	return 0;
     }
 
-    map->memory = mmap(NULL, map->size, prot, MAP_SHARED, map_fd, map->base);
-#else
-    /*
-     * Still used xsvc to do the user space mapping
-     */
-    if (xsvc_fd < 0) {
-	if ((xsvc_fd = open("/dev/xsvc", O_RDWR)) < 0) {
-	    err = errno;
-	    (void) fprintf(stderr, "can not open /dev/xsvc: %s\n",
-			   strerror(errno));
-	    return err;
-	}
+    if ((di_node = di_init("/", DINFOCPYALL)) == DI_NODE_NIL) {
+	err = errno;
+	(void) fprintf(stderr, "di_init() failed: %s\n",
+		       strerror(errno));
+	return (err);
     }
 
-    map->memory = mmap(NULL, map->size, prot, MAP_SHARED, xsvc_fd, map->base);
-#endif
-
-    if (map->memory == MAP_FAILED) {
+    if ((devices = calloc(INITIAL_NUM_DEVICES,
+			sizeof (struct pci_device_private))) == NULL) {
 	err = errno;
-
-	(void) fprintf(stderr, "map rom region =%llx failed: %s\n",
-		       map->base, strerror(errno));
+	di_fini(di_node);
+	return (err);
     }
 
 #ifdef __sparc
-    close (map_fd);
+    if ((di_phdl = di_prom_init()) == DI_PROM_HANDLE_NIL)
+	(void) fprintf(stderr, "di_prom_init failed: %s\n", strerror(errno));
 #endif
 
-    return err;
+    pinfo.num_allocated_elems = INITIAL_NUM_DEVICES;
+    pinfo.num_devices = 0;
+    pinfo.devices = devices;
+    (void) di_walk_minor(di_node, DDI_NT_REGACC, 0, &pinfo, probe_nexus_node);
+
+    di_fini(di_node);
+
+    if ((pci_sys = calloc(1, sizeof (struct pci_system))) == NULL) {
+	err = errno;
+	free(devices);
+	return (err);
+    }
+
+    pci_sys->methods = &solx_devfs_methods;
+    pci_sys->devices = pinfo.devices;
+    pci_sys->num_devices = pinfo.num_devices;
+
+    return (err);
 }
