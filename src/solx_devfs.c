@@ -1082,19 +1082,19 @@ pci_device_solx_devfs_write( struct pci_device * dev, const void * data,
     switch (size) {
         case 1:
 	    cfg_prg.acc_attr = PCITOOL_ACC_ATTR_SIZE_1 + NATIVE_ENDIAN;
-	    cfg_prg.data = *((uint8_t *)data);
+	    cfg_prg.data = *((const uint8_t *)data);
 	    break;
         case 2:
 	    cfg_prg.acc_attr = PCITOOL_ACC_ATTR_SIZE_2 + NATIVE_ENDIAN;
-	    cfg_prg.data = *((uint16_t *)data);
+	    cfg_prg.data = *((const uint16_t *)data);
 	    break;
         case 4:
 	    cfg_prg.acc_attr = PCITOOL_ACC_ATTR_SIZE_4 + NATIVE_ENDIAN;
-	    cfg_prg.data = *((uint32_t *)data);
+	    cfg_prg.data = *((const uint32_t *)data);
 	    break;
         case 8:
 	    cfg_prg.acc_attr = PCITOOL_ACC_ATTR_SIZE_8 + NATIVE_ENDIAN;
-	    cfg_prg.data = *((uint64_t *)data);
+	    cfg_prg.data = *((const uint64_t *)data);
 	    break;
         default:
 	    return EINVAL;
