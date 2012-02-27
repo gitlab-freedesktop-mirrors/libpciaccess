@@ -1,6 +1,7 @@
 /*
  * (C) Copyright IBM Corporation 2006
  * All Rights Reserved.
+ * Copyright 2012 Red Hat, Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -43,6 +44,18 @@
 #include <sys/mman.h>
 #include <dirent.h>
 #include <errno.h>
+
+#if defined(__i386__) || defined(__x86_64__) || defined(__arm__)
+#include <sys/io.h>
+#else
+#define inb(x) -1
+#define inw(x) -1
+#define inl(x) -1
+#define outb(x) do {} while (0)
+#define outw(x) do {} while (0)
+#define outl(x) do {} while (0)
+#define iopl(x) -1
+#endif
 
 #include "config.h"
 
@@ -769,12 +782,17 @@ pci_device_linux_sysfs_open_legacy_io(struct pci_io_handle *ret,
 	dev = pci_device_get_parent_bridge(dev);
     }
 
-    /* If not, /dev/port is the best we can do */
-    if (!dev)
-	ret->fd = open("/dev/port", O_RDWR);
+    /*
+     * You would think you'd want to use /dev/port here.  Don't make that
+     * mistake, /dev/port only does byte-wide i/o cycles which means it
+     * doesn't work.  If you think this is stupid, well, you're right.
+     */
 
-    if (ret->fd < 0)
-	return NULL;
+    /* If we've no other choice, iopl */
+    if (ret->fd < 0) {
+	if (iopl(3))
+	    return NULL;
+    }
 
     ret->base = base;
     ret->size = size;
@@ -786,7 +804,8 @@ static void
 pci_device_linux_sysfs_close_io(struct pci_device *dev,
 				struct pci_io_handle *handle)
 {
-    close(handle->fd);
+    if (handle->fd > -1)
+	close(handle->fd);
 }
 
 static uint32_t
@@ -794,8 +813,11 @@ pci_device_linux_sysfs_read32(struct pci_io_handle *handle, uint32_t port)
 {
     uint32_t ret;
 
-    pread(handle->fd, &ret, 4, port + handle->base);
-
+    if (handle->fd > -1)
+	pread(handle->fd, &ret, 4, port + handle->base);
+    else
+	ret = inl(port + handle->base);
+	
     return ret;
 }
 
@@ -804,7 +826,10 @@ pci_device_linux_sysfs_read16(struct pci_io_handle *handle, uint32_t port)
 {
     uint16_t ret;
 
-    pread(handle->fd, &ret, 2, port + handle->base);
+    if (handle->fd > -1)
+	pread(handle->fd, &ret, 2, port + handle->base);
+    else
+	ret = inw(port + handle->base);
 
     return ret;
 }
@@ -814,7 +839,10 @@ pci_device_linux_sysfs_read8(struct pci_io_handle *handle, uint32_t port)
 {
     uint8_t ret;
 
-    pread(handle->fd, &ret, 1, port + handle->base);
+    if (handle->fd > -1)
+	pread(handle->fd, &ret, 1, port + handle->base);
+    else
+	ret = inb(port + handle->base);
 
     return ret;
 }
@@ -823,21 +851,30 @@ static void
 pci_device_linux_sysfs_write32(struct pci_io_handle *handle, uint32_t port,
 			       uint32_t data)
 {
-    pwrite(handle->fd, &data, 4, port + handle->base);
+    if (handle->fd > -1)
+	pwrite(handle->fd, &data, 4, port + handle->base);
+    else
+	outl(data, port + handle->base);
 }
 
 static void
 pci_device_linux_sysfs_write16(struct pci_io_handle *handle, uint32_t port,
 			       uint16_t data)
 {
-    pwrite(handle->fd, &data, 2, port + handle->base);
+    if (handle->fd > -1)
+	pwrite(handle->fd, &data, 2, port + handle->base);
+    else
+	outw(data, port + handle->base);
 }
 
 static void
 pci_device_linux_sysfs_write8(struct pci_io_handle *handle, uint32_t port,
 			      uint8_t data)
 {
-    pwrite(handle->fd, &data, 1, port + handle->base);
+    if (handle->fd > -1)
+	pwrite(handle->fd, &data, 1, port + handle->base);
+    else
+	outb(data, port + handle->base);
 }
 
 static int
