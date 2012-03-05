@@ -51,9 +51,9 @@
 #define inb(x) -1
 #define inw(x) -1
 #define inl(x) -1
-#define outb(x) do {} while (0)
-#define outw(x) do {} while (0)
-#define outl(x) do {} while (0)
+#define outb(x,y) do {} while (0)
+#define outw(x,y) do {} while (0)
+#define outl(x,y) do {} while (0)
 #define iopl(x) -1
 #endif
 
