@@ -771,6 +771,8 @@ pci_device_solx_devfs_probe( struct pci_device * dev )
     int i;
     int len = 0;
     uint ent = 0;
+    struct pci_device_private *priv =
+	(struct pci_device_private *) dev;
     nexus_t *nexus;
 
 #ifdef __sparc
@@ -835,83 +837,69 @@ pci_device_solx_devfs_probe( struct pci_device * dev )
     if (len <= 0)
 	goto cleanup;
 
-
     /*
-     * how to find the size of rom???
-     * if the device has expansion rom,
-     * it must be listed in the last
-     * cells because solaris find probe
-     * the base address from offset 0x10
-     * to 0x30h. So only check the last
-     * item.
-     */
-    reg = (pci_regspec_t *)&regbuf[len - CELL_NUMS_1275];
-    if (PCI_REG_REG_G(reg->pci_phys_hi) == PCI_CONF_ROM) {
-	/*
-	 * rom can only be 32 bits
-	 */
-	dev->rom_size = reg->pci_size_low;
-	len = len - CELL_NUMS_1275;
-    }
-    else {
-	/*
-	 * size default to 64K and base address
-	 * default to 0xC0000
-	 */
-	dev->rom_size = 0x10000;
-    }
-
-    /*
-     * Solaris has its own BAR index.
+     * Each BAR address get its own region slot in sequence.
+     * 32 bit BAR:
+     * BAR 0x10 -> slot0, BAR 0x14 -> slot1...
+     * 64 bit BAR:
+     * BAR 0x10 -> slot0, BAR 0x18 -> slot2...,
+     * slot1 is part of BAR 0x10
      * Linux give two region slot for 64 bit address.
      */
     for (i = 0; i < len; i = i + CELL_NUMS_1275) {
 
 	reg = (pci_regspec_t *)&regbuf[i];
 	ent = reg->pci_phys_hi & 0xff;
-	/*
-	 * G35 broken in BAR0
-	 */
-	ent = (ent - PCI_CONF_BASE0) >> 2;
-	if (ent >= 6) {
+
+	if (ent > PCI_CONF_ROM) {
 	    fprintf(stderr, "error ent = %d\n", ent);
 	    break;
 	}
-
 	/*
-	 * non relocatable resource is excluded
-	 * such like 0xa0000, 0x3b0. If it is met,
-	 * the loop is broken;
+	 * G35 broken in BAR0
 	 */
-	if (!PCI_REG_REG_G(reg->pci_phys_hi))
+	if (ent < PCI_CONF_BASE0) {
+	    /*
+	     * VGA resource here and ignore it
+	     */
 	    break;
-
-	if (reg->pci_phys_hi & PCI_PREFETCH_B) {
-	    dev->regions[ent].is_prefetchable = 1;
-	}
-
-
-	/*
-	 * We split the shift count 32 into two 16 to
-	 * avoid the complaining of the compiler
-	 */
-	dev->regions[ent].base_addr = reg->pci_phys_low +
-	    ((reg->pci_phys_mid << 16) << 16);
-	dev->regions[ent].size = reg->pci_size_low +
-	    ((reg->pci_size_hi << 16) << 16);
-
-	switch (reg->pci_phys_hi & PCI_REG_ADDR_M) {
-	    case PCI_ADDR_IO:
-		dev->regions[ent].is_IO = 1;
+	} else if (ent == PCI_CONF_ROM) {
+	    priv->rom_base = reg->pci_phys_low |
+		((uint64_t)reg->pci_phys_mid << 32);
+	    dev->rom_size = reg->pci_size_low;
+	} else {
+	    ent = (ent - PCI_CONF_BASE0) >> 2;
+	    /*
+	     * non relocatable resource is excluded
+	     * such like 0xa0000, 0x3b0. If it is met,
+	     * the loop is broken;
+	     */
+	    if (!PCI_REG_REG_G(reg->pci_phys_hi))
 		break;
-	    case PCI_ADDR_MEM32:
-		break;
-	    case PCI_ADDR_MEM64:
-		dev->regions[ent].is_64 = 1;
-		/*
-		 * Skip one slot for 64 bit address
-		 */
-		break;
+
+	    if (reg->pci_phys_hi & PCI_PREFETCH_B) {
+		dev->regions[ent].is_prefetchable = 1;
+	    }
+
+
+	    dev->regions[ent].base_addr = reg->pci_phys_low |
+		((uint64_t)reg->pci_phys_mid << 32);
+	    dev->regions[ent].size = reg->pci_size_low |
+		((uint64_t)reg->pci_size_hi << 32);
+
+	    switch (reg->pci_phys_hi & PCI_REG_ADDR_M) {
+		case PCI_ADDR_IO:
+		    dev->regions[ent].is_IO = 1;
+		    break;
+		case PCI_ADDR_MEM32:
+		    break;
+		case PCI_ADDR_MEM64:
+		    dev->regions[ent].is_64 = 1;
+		    /*
+		     * Skip one slot for 64 bit address
+		     */
+		    break;
+	    }
 	}
     }
 
@@ -996,15 +984,22 @@ pci_device_solx_devfs_read_rom( struct pci_device * dev, void * buffer )
     int err;
     struct pci_device_mapping prom = {
 	.base = 0xC0000,
-	.size = dev->rom_size,
+	.size = 0x10000,
 	.flags = 0
     };
+    struct pci_device_private *priv =
+	(struct pci_device_private *) dev;
+
+    if (priv->rom_base) {
+	prom.base = priv->rom_base;
+	prom.size = dev->rom_size;
+    }
 
     err = pci_device_solx_devfs_map_range(dev, &prom);
     if (err == 0) {
 	(void) bcopy(prom.memory, buffer, dev->rom_size);
 
-	if (munmap(prom.memory, dev->rom_size) == -1) {
+	if (munmap(prom.memory, prom.size) == -1) {
 	    err = errno;
 	}
     }
