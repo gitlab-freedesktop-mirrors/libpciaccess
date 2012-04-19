@@ -911,7 +911,7 @@ pci_device_solx_devfs_probe( struct pci_device * dev )
 }
 
 /**
- * Map a memory region for a device using /dev/xsvc.
+ * Map a memory region for a device using /dev/xsvc (x86) or fb device (sparc)
  *
  * \param dev   Device whose memory region is to be mapped.
  * \param map   Parameters of the mapping that is to be created.
@@ -927,39 +927,40 @@ pci_device_solx_devfs_map_range(struct pci_device *dev,
 			? (PROT_READ | PROT_WRITE) : PROT_READ;
     int err = 0;
 
-#ifdef __sparc
-    char	map_dev[128];
+    const char *map_dev;
     int		map_fd;
 
-    if (MAPPING_DEV_PATH(dev))
-	snprintf(map_dev, sizeof (map_dev), "%s%s", "/devices", MAPPING_DEV_PATH(dev));
-    else
-	strcpy (map_dev, "/dev/fb0");
+#ifdef __sparc
+    char	map_dev_buf[128];
 
-    if ((map_fd = open(map_dev, O_RDWR | O_CLOEXEC)) < 0) {
-	err = errno;
-	(void) fprintf(stderr, "can not open %s: %s\n", map_dev,
-			   strerror(errno));
-	return err;
+    if (MAPPING_DEV_PATH(dev)) {
+	snprintf(map_dev_buf, sizeof (map_dev_buf), "%s%s",
+		 "/devices", MAPPING_DEV_PATH(dev));
+	map_dev = map_dev_buf;
     }
+    else
+	map_dev = "/dev/fb0";
 
-    map->memory = mmap(NULL, map->size, prot, MAP_SHARED, map_fd, map->base);
+    map_fd = -1;
 #else
     /*
-     * Still used xsvc to do the user space mapping
+     * Still uses xsvc to do the user space mapping on x86/x64,
+     * caches open fd across multiple calls.
      */
-    if (xsvc_fd < 0) {
-	if ((xsvc_fd = open("/dev/xsvc", O_RDWR | O_CLOEXEC)) < 0) {
+    map_dev = "/dev/xsvc";
+    map_fd = xsvc_fd;
+#endif
+
+    if (map_fd < 0) {
+	if ((map_fd = open(map_dev, O_RDWR | O_CLOEXEC)) < 0) {
 	    err = errno;
-	    (void) fprintf(stderr, "can not open /dev/xsvc: %s\n",
+	    (void) fprintf(stderr, "can not open %s: %s\n", map_dev,
 			   strerror(errno));
 	    return err;
 	}
     }
 
-    map->memory = mmap(NULL, map->size, prot, MAP_SHARED, xsvc_fd, map->base);
-#endif
-
+    map->memory = mmap(NULL, map->size, prot, MAP_SHARED, map_fd, map->base);
     if (map->memory == MAP_FAILED) {
 	err = errno;
 
