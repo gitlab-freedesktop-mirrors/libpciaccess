@@ -112,15 +112,22 @@ pci_system_cleanup( void )
 	    }
 	}
 
+#ifdef __sparc
+	if ( pci_sys->methods->destroy != NULL ) {
+	    (*pci_sys->methods->destroy)();
+	}
+#endif
+
 	free( pci_sys->devices );
 	pci_sys->devices = NULL;
 	pci_sys->num_devices = 0;
     }
 
-
+#ifndef __sparc
     if ( pci_sys->methods->destroy != NULL ) {
 	(*pci_sys->methods->destroy)();
     }
+#endif
 
     free( pci_sys );
     pci_sys = NULL;

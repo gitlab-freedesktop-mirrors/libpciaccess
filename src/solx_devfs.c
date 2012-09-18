@@ -72,7 +72,7 @@ typedef struct nexus {
     char *dev_path;
     struct nexus *next;
 #ifdef __sparc
-    struct pci_device **devlist;
+    size_t *devlist;
     volatile size_t num_allocated_elems;
     volatile size_t num_devices;
 #endif
@@ -140,7 +140,8 @@ find_nexus_for_dev(struct pci_device *dev)
 
     for (nexus = nexus_list ; nexus != NULL ; nexus = nexus->next) {
 	for (i = 0; i < nexus->num_devices; i++) {
-	    if (nexus->devlist[i] == dev)
+	    size_t dev_idx = nexus->devlist[i];
+	    if (&pci_sys->devices[dev_idx].base == dev)
 		return nexus;
 	}
     }
@@ -196,7 +197,8 @@ pci_system_solx_devfs_destroy( void )
 	    int i;
 
 	    for (i = 0; i < nexus->num_devices; i++) {
-		dev = nexus->devlist[i];
+		size_t dev_idx = nexus->devlist[i];
+		dev = &pci_sys->devices[dev_idx].base;
 		if (MAPPING_DEV_PATH(dev))
 		    di_devfs_path_free((char *) MAPPING_DEV_PATH(dev));
 	    }
@@ -383,7 +385,8 @@ probe_dev(nexus_t *nexus, pcitool_reg_t *prg_p, probe_info_t *pinfo)
 	     * function number.
 	     */
 
-	    pci_base = &pinfo->devices[pinfo->num_devices].base;
+	    size_t dev_idx = pinfo->num_devices;
+	    pci_base = &pinfo->devices[dev_idx].base;
 
 	    pci_base->domain = nexus->domain;
 	    pci_base->bus = prg_p->bus_no;
@@ -406,7 +409,7 @@ probe_dev(nexus_t *nexus, pcitool_reg_t *prg_p, probe_info_t *pinfo)
 	    pci_base->subdevice_id 	= GET_CONFIG_VAL_16(PCI_CONF_SUBSYSID);
 	    pci_base->irq		= GET_CONFIG_VAL_8(PCI_CONF_ILINE);
 
-	    pinfo->devices[pinfo->num_devices].header_type
+	    pinfo->devices[dev_idx].header_type
 					= GET_CONFIG_VAL_8(PCI_CONF_HEADER);
 
 #ifdef DEBUG
@@ -437,19 +440,19 @@ probe_dev(nexus_t *nexus, pcitool_reg_t *prg_p, probe_info_t *pinfo)
 	    }
 
 #ifdef __sparc
-	    nexus->devlist[nexus->num_devices++] = pci_base;
+	    nexus->devlist[nexus->num_devices++] = dev_idx;
 
 	    if (nexus->num_devices == nexus->num_allocated_elems) {
-		struct pci_device **new_devs;
+		size_t *new_devs;
 		size_t new_num_elems = nexus->num_allocated_elems * 2;
 
 		new_devs = realloc(nexus->devlist,
-			new_num_elems * sizeof (struct pci_device *));
+			new_num_elems * sizeof (size_t *));
 		if (new_devs == NULL)
 		    return (rval);
 		(void) memset(&new_devs[nexus->num_devices], 0,
 			nexus->num_allocated_elems *
-			sizeof (struct pci_device *));
+			sizeof (size_t *));
 		nexus->num_allocated_elems = new_num_elems;
 		nexus->devlist = new_devs;
 	    }
@@ -642,7 +645,7 @@ probe_nexus_node(di_node_t di_node, di_minor_t minor, void *arg)
 
 #ifdef __sparc
     if ((nexus->devlist = calloc(INITIAL_NUM_DEVICES,
-			sizeof (struct pci_device *))) == NULL) {
+			sizeof (size_t *))) == NULL) {
 	(void) fprintf(stderr, "Error allocating memory for nexus devlist: %s\n",
                        strerror(errno));
 	free (nexus);
