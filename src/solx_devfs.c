@@ -796,9 +796,12 @@ pci_device_solx_devfs_probe( struct pci_device * dev )
     }
 
     if (args.node != DI_NODE_NIL) {
+	int *prop;
 #ifdef __sparc
 	di_minor_t minor;
 #endif
+
+	priv->is_primary = 0;
 
 #ifdef __sparc
 	if (minor = di_minor_next(args.node, DI_MINOR_NIL))
@@ -806,6 +809,12 @@ pci_device_solx_devfs_probe( struct pci_device * dev )
 	else
 	    MAPPING_DEV_PATH(dev) = NULL;
 #endif
+
+	if (di_prop_lookup_ints(DDI_DEV_T_ANY, args.node,
+				"primary-controller", &prop) >= 1) {
+	    if (prop[0])
+		priv->is_primary = 1;
+	}
 
 	/*
 	 * It will succeed for sure, because it was
@@ -1131,6 +1140,15 @@ pci_device_solx_devfs_write( struct pci_device * dev, const void * data,
     return (err);
 }
 
+static int pci_device_solx_devfs_boot_vga(struct pci_device *dev)
+{
+    struct pci_device_private *priv =
+	(struct pci_device_private *) dev;
+
+    return (priv->is_primary);
+
+}
+
 static struct pci_io_handle *
 pci_device_solx_devfs_open_legacy_io(struct pci_io_handle *ret,
 				     struct pci_device *dev,
@@ -1263,6 +1281,7 @@ static const struct pci_system_methods solx_devfs_methods = {
     .write = pci_device_solx_devfs_write,
 
     .fill_capabilities = pci_fill_capabilities_generic,
+    .boot_vga = pci_device_solx_devfs_boot_vga,
 
     .open_legacy_io = pci_device_solx_devfs_open_legacy_io,
     .read32 = pci_device_solx_devfs_read32,
