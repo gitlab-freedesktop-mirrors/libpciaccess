@@ -71,11 +71,6 @@ typedef struct nexus {
     char *path;			/* for errors/debugging; fd is all we need */
     char *dev_path;
     struct nexus *next;
-#ifdef __sparc
-    size_t *devlist;
-    volatile size_t num_allocated_elems;
-    volatile size_t num_devices;
-#endif
 } nexus_t;
 
 typedef struct probe_info {
@@ -91,6 +86,7 @@ static int xsvc_fd = -1;
 
 #ifdef __sparc
 static di_prom_handle_t di_phdl;
+static size_t  nexus_count = 0;
 #endif
 
 /*
@@ -131,23 +127,6 @@ static di_prom_handle_t di_phdl;
 # define U45_SB_CLASS_RID	0x06040000
 #endif
 
-#ifdef __sparc
-static nexus_t *
-find_nexus_for_dev(struct pci_device *dev)
-{
-    nexus_t *nexus;
-    int i;
-
-    for (nexus = nexus_list ; nexus != NULL ; nexus = nexus->next) {
-	for (i = 0; i < nexus->num_devices; i++) {
-	    size_t dev_idx = nexus->devlist[i];
-	    if (&pci_sys->devices[dev_idx].base == dev)
-		return nexus;
-	}
-    }
-    return NULL;
-}
-#else
 static nexus_t *
 find_nexus_for_bus( int domain, int bus )
 {
@@ -161,7 +140,6 @@ find_nexus_for_bus( int domain, int bus )
     }
     return NULL;
 }
-#endif
 
 #define GET_CONFIG_VAL_8(offset) (config_hdr.bytes[offset])
 #define GET_CONFIG_VAL_16(offset) \
@@ -191,20 +169,6 @@ pci_system_solx_devfs_destroy( void )
 	close(nexus->fd);
 	free(nexus->path);
 	free(nexus->dev_path);
-#ifdef __sparc
-	{
-	    struct pci_device *dev;
-	    int i;
-
-	    for (i = 0; i < nexus->num_devices; i++) {
-		size_t dev_idx = nexus->devlist[i];
-		dev = &pci_sys->devices[dev_idx].base;
-		if (MAPPING_DEV_PATH(dev))
-		    di_devfs_path_free((char *) MAPPING_DEV_PATH(dev));
-	    }
-	}
-	free(nexus->devlist);
-#endif
 	free(nexus);
     }
     nexus_list = NULL;
@@ -219,6 +183,20 @@ pci_system_solx_devfs_destroy( void )
     }
 #endif
 }
+
+
+#ifdef __sparc
+/*
+ * Release resources per device
+ */
+static void
+pci_system_solx_devfs_destroy_device( struct pci_device *dev )
+{
+   if (MAPPING_DEV_PATH(dev))
+	di_devfs_path_free((char *) MAPPING_DEV_PATH(dev));
+}
+#endif
+
 
 /*
  * Retrieve first 16 dwords of device's config header, except for the first
@@ -385,8 +363,7 @@ probe_dev(nexus_t *nexus, pcitool_reg_t *prg_p, probe_info_t *pinfo)
 	     * function number.
 	     */
 
-	    size_t dev_idx = pinfo->num_devices;
-	    pci_base = &pinfo->devices[dev_idx].base;
+	    pci_base = &pinfo->devices[pinfo->num_devices].base;
 
 	    pci_base->domain = nexus->domain;
 	    pci_base->bus = prg_p->bus_no;
@@ -409,7 +386,7 @@ probe_dev(nexus_t *nexus, pcitool_reg_t *prg_p, probe_info_t *pinfo)
 	    pci_base->subdevice_id 	= GET_CONFIG_VAL_16(PCI_CONF_SUBSYSID);
 	    pci_base->irq		= GET_CONFIG_VAL_8(PCI_CONF_ILINE);
 
-	    pinfo->devices[dev_idx].header_type
+	    pinfo->devices[pinfo->num_devices].header_type
 					= GET_CONFIG_VAL_8(PCI_CONF_HEADER);
 
 #ifdef DEBUG
@@ -438,25 +415,6 @@ probe_dev(nexus_t *nexus, pcitool_reg_t *prg_p, probe_info_t *pinfo)
 		pinfo->num_allocated_elems = new_num_elems;
 		pinfo->devices = new_devs;
 	    }
-
-#ifdef __sparc
-	    nexus->devlist[nexus->num_devices++] = dev_idx;
-
-	    if (nexus->num_devices == nexus->num_allocated_elems) {
-		size_t *new_devs;
-		size_t new_num_elems = nexus->num_allocated_elems * 2;
-
-		new_devs = realloc(nexus->devlist,
-			new_num_elems * sizeof (size_t *));
-		if (new_devs == NULL)
-		    return (rval);
-		(void) memset(&new_devs[nexus->num_devices], 0,
-			nexus->num_allocated_elems *
-			sizeof (size_t *));
-		nexus->num_allocated_elems = new_num_elems;
-		nexus->devlist = new_devs;
-	    }
-#endif
 
 	    /*
 	     * Accommodate devices which state their
@@ -599,12 +557,16 @@ probe_nexus_node(di_node_t di_node, di_minor_t minor, void *arg)
 #endif
 	    }
 	}
+#ifdef __sparc
+	domain = nexus_count;
+#else
 	else if (strcmp(prop_name, "pciseg") == 0) {
 	    numval = di_prop_ints(prop, &ints);
 	    if (numval == 1) {
 		domain = ints[0];
 	    }
 	}
+#endif
     }
 
 #ifdef __sparc
@@ -644,15 +606,7 @@ probe_nexus_node(di_node_t di_node, di_minor_t minor, void *arg)
     nexus->domain = domain;
 
 #ifdef __sparc
-    if ((nexus->devlist = calloc(INITIAL_NUM_DEVICES,
-			sizeof (size_t *))) == NULL) {
-	(void) fprintf(stderr, "Error allocating memory for nexus devlist: %s\n",
-                       strerror(errno));
-	free (nexus);
-	return (DI_WALK_TERMINATE);
-    }
-    nexus->num_allocated_elems = INITIAL_NUM_DEVICES;
-    nexus->num_devices = 0;
+    nexus_count++;
 #endif
 
     nexus_name = di_devfs_minor_path(minor);
@@ -775,11 +729,7 @@ pci_device_solx_devfs_probe( struct pci_device * dev )
 	(struct pci_device_private *) dev;
     nexus_t *nexus;
 
-#ifdef __sparc
-    if ( (nexus = find_nexus_for_dev(dev)) == NULL )
-#else
     if ( (nexus = find_nexus_for_bus(dev->domain, dev->bus)) == NULL )
-#endif
 	return ENODEV;
 
     /*
@@ -1019,11 +969,7 @@ pci_device_solx_devfs_read( struct pci_device * dev, void * data,
     int i = 0;
     nexus_t *nexus;
 
-#ifdef __sparc
-    nexus = find_nexus_for_dev(dev);
-#else
     nexus = find_nexus_for_bus(dev->domain, dev->bus);
-#endif
 
     *bytes_read = 0;
 
@@ -1077,11 +1023,7 @@ pci_device_solx_devfs_write( struct pci_device * dev, const void * data,
     int cmd;
     nexus_t *nexus;
 
-#ifdef __sparc
-    nexus = find_nexus_for_dev(dev);
-#else
     nexus = find_nexus_for_bus(dev->domain, dev->bus);
-#endif
 
     if ( bytes_written != NULL ) {
 	*bytes_written = 0;
@@ -1266,7 +1208,11 @@ pci_device_solx_devfs_unmap_legacy(struct pci_device *dev,
 
 static const struct pci_system_methods solx_devfs_methods = {
     .destroy = pci_system_solx_devfs_destroy,
+#ifdef __sparc
+    .destroy_device = pci_system_solx_devfs_destroy_device,
+#else
     .destroy_device = NULL,
+#endif
     .read_rom = pci_device_solx_devfs_read_rom,
     .probe = pci_device_solx_devfs_probe,
     .map_range = pci_device_solx_devfs_map_range,
@@ -1327,6 +1273,9 @@ pci_system_solx_devfs_create( void )
     pinfo.num_allocated_elems = INITIAL_NUM_DEVICES;
     pinfo.num_devices = 0;
     pinfo.devices = devices;
+#ifdef __sparc
+    nexus_count = 0;
+#endif
     (void) di_walk_minor(di_node, DDI_NT_REGACC, 0, &pinfo, probe_nexus_node);
 
     di_fini(di_node);
