@@ -77,10 +77,10 @@ case $host_os in
 	*netbsd*)
 		case $host in
 		*i386*)
-			PCIACCESS_LIBS="-li386"
+			PCIACCESS_LIBS="-li386 -lpci"
 			;;
 		*x86_64*|*amd64*)
-			PCIACCESS_LIBS="-lx86_64"
+			PCIACCESS_LIBS="-lx86_64 -lpci"
 			;;
 		esac
 		netbsd=yes
