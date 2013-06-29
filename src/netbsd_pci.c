@@ -21,10 +21,25 @@
 #include <sys/mman.h>
 #include <sys/types.h>
 
+#ifdef HAVE_CONFIG_H
+#include "config.h"
+#endif
+
 #ifdef HAVE_MTRR
 #include <machine/sysarch.h>
 #include <machine/mtrr.h>
+#ifdef _X86_SYSARCH_L
+/* NetBSD 5.x and newer */
 #define netbsd_set_mtrr(mr, num)	_X86_SYSARCH_L(set_mtrr)(mr, num)
+#else
+/* NetBSD 4.x and older */
+#ifdef __i386__
+#define netbsd_set_mtrr(mr, num)	i386_set_mtrr((mr), (num))
+#endif
+#ifdef __amd64__
+#define netbsd_set_mtrr(mr, num)	x86_64_set_mtrr((mr), (num))
+#endif
+#endif
 #endif
 
 #include <dev/pci/pcidevs.h>

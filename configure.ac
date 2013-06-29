@@ -108,7 +108,17 @@ AC_SYS_LARGEFILE
 
 AC_CHECK_HEADERS([err.h])
 
+if test "x$netbsd" = xyes; then
+AC_CHECK_HEADERS([machine/sysarch.h])
+AC_CHECK_HEADERS([machine/mtrr.h], [have_mtrr_h="yes"], [have_mtrr_h="no"],
+[#ifdef HAVE_MACHINE_SYSARCH_H
+#include <sys/types.h>
+#include <machine/sysarch.h>
+#endif
+])
+else
 AC_CHECK_HEADER([asm/mtrr.h], [have_mtrr_h="yes"], [have_mtrr_h="no"])
+fi
 
 if test "x$have_mtrr_h" = xyes; then
     AC_DEFINE(HAVE_MTRR, 1, [Use MTRRs on mappings])
