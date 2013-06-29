@@ -248,6 +248,7 @@ pci_device_netbsd_write(struct pci_device *dev, const void *data,
 	return 0;
 }
 
+#if defined(WSDISPLAYIO_GET_BUSID)
 static int
 pci_device_netbsd_boot_vga(struct pci_device *dev)
 {
@@ -284,6 +285,7 @@ pci_device_netbsd_boot_vga(struct pci_device *dev)
 
 	return 1;
 }
+#endif
 
 static void
 pci_system_netbsd_destroy(void)
@@ -518,7 +520,11 @@ static const struct pci_system_methods netbsd_pci_methods = {
 	.read = pci_device_netbsd_read,
 	.write = pci_device_netbsd_write,
 	.fill_capabilities = pci_fill_capabilities_generic,
+#if defined(WSDISPLAYIO_GET_BUSID)
 	.boot_vga = pci_device_netbsd_boot_vga,
+#else
+	.boot_vga = NULL,
+#endif
 };
 
 int
