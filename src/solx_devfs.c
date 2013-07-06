@@ -612,7 +612,7 @@ pci_device_solx_devfs_probe( struct pci_device * dev )
      * slot1 is part of BAR 0x10
      * Linux give two region slot for 64 bit address.
      */
-    for (i = 0; i < len; i = i + CELL_NUMS_1275) {
+    for (i = 0; i < len; i = i + (int)CELL_NUMS_1275) {
 
 	reg = (pci_regspec_t *)&regbuf[i];
 	ent = reg->pci_phys_hi & 0xff;
