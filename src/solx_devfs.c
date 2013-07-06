@@ -802,7 +802,7 @@ pci_device_solx_devfs_read( struct pci_device * dev, void * data,
 {
     pcitool_reg_t cfg_prg;
     int err = 0;
-    int i = 0;
+    unsigned int i = 0;
     nexus_t *nexus;
 
     nexus = find_nexus_for_bus(dev->domain, dev->bus);
