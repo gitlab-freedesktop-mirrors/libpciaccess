@@ -113,26 +113,6 @@ static size_t  nexus_count = 0;
 #define MAPPING_DEV_PATH(dev)	 (((struct pci_device_private *) dev)->device_string)
 #endif
 
-/*
- * Identify problematic southbridges.  These have device id 0x5249 and
- * vendor id 0x10b9.  Check for revision ID 0 and class code 060400 as well.
- * Values are little endian, so they are reversed for SPARC.
- *
- * Check for these southbridges on all architectures, as the issue is a
- * southbridge issue, independent of processor.
- *
- * If one of these is found during probing, skip probing other devs/funcs on
- * the rest of the bus, since the southbridge and all devs underneath will
- * otherwise disappear.
- */
-#if (NATIVE_ENDIAN == PCITOOL_ACC_ATTR_ENDN_BIG)
-# define U45_SB_DEVID_VID	0xb9104952
-# define U45_SB_CLASS_RID	0x00000406
-#else
-# define U45_SB_DEVID_VID	0x524910b9
-# define U45_SB_CLASS_RID	0x06040000
-#endif
-
 static nexus_t *
 find_nexus_for_bus( int domain, int bus )
 {
