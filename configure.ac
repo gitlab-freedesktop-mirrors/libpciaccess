@@ -76,7 +76,7 @@ case $host_os in
 		;;
 	*netbsd*)
 		case $host in
-		*i386*)
+		*i[3-9]86*)
 			PCIACCESS_LIBS="$PCIACCESS_LIBS -li386 -lpci"
 			;;
 		*x86_64*|*amd64*)
