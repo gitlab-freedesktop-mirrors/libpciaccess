@@ -95,6 +95,10 @@ case $host_os in
 	gnu*)
 		gnu=yes
 		;;
+	*cygwin*)
+		cygwin=yes
+		PCIACCESS_LIBS="$PCIACCESS_LIBS"
+		;;
 esac
 
 AM_CONDITIONAL(LINUX, [test "x$linux" = xyes])
@@ -103,6 +107,7 @@ AM_CONDITIONAL(NETBSD, [test "x$netbsd" = xyes])
 AM_CONDITIONAL(OPENBSD, [test "x$openbsd" = xyes])
 AM_CONDITIONAL(SOLARIS, [test "x$solaris" = xyes])
 AM_CONDITIONAL(GNU, [test "x$gnu" = xyes])
+AM_CONDITIONAL(CYGWIN, [test "x$cygwin" = xyes])
 
 AC_SYS_LARGEFILE
 
