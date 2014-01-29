@@ -658,7 +658,7 @@ static int
 pci_device_x86_unmap_range(struct pci_device *dev,
     struct pci_device_mapping *map)
 {
-    return pci_device_generic_unamp_range(dev, map);
+    return pci_device_generic_unmap_range(dev, map);
 }
 
 #endif
