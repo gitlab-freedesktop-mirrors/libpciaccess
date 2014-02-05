@@ -733,6 +733,7 @@ pci_device_netbsd_open_legacy_io(struct pci_io_handle *ret,
 
 	ret->base = base;
 	ret->size = size;
+	ret->is_legacy = 1;
 	return ret;
 #elif defined(__amd64__)
 	struct x86_64_iopl_args ia;
@@ -743,6 +744,7 @@ pci_device_netbsd_open_legacy_io(struct pci_io_handle *ret,
 
 	ret->base = base;
 	ret->size = size;
+	ret->is_legacy = 1;
 	return ret;
 #else
 	return NULL;

@@ -911,6 +911,7 @@ pci_device_solx_devfs_open_legacy_io(struct pci_io_handle *ret,
     if (sysi86(SI86V86, V86SC_IOPL, PS_IOPL) == 0) {
 	ret->base = base;
 	ret->size = size;
+	ret->is_legacy = 1;
 	return ret;
     }
 #endif

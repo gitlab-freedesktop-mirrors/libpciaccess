@@ -109,6 +109,7 @@ struct pci_io_handle {
     pciaddr_t size;
     void *memory;
     int fd;
+    int is_legacy;
 };
 
 struct pci_device_private {

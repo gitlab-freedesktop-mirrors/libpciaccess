@@ -729,6 +729,7 @@ pci_device_x86_open_legacy_io(struct pci_io_handle *ret,
 
     ret->base = base;
     ret->size = size;
+    ret->is_legacy = 1;
 
     return ret;
 }

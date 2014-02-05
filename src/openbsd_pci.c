@@ -412,6 +412,7 @@ pci_device_openbsd_open_legacy_io(struct pci_io_handle *ret,
 
 	ret->base = base;
 	ret->size = size;
+	ret->is_legacy = 1;
 	return ret;
 #elif defined(__amd64__)
 	struct amd64_iopl_args ia;
@@ -422,6 +423,7 @@ pci_device_openbsd_open_legacy_io(struct pci_io_handle *ret,
 
 	ret->base = base;
 	ret->size = size;
+	ret->is_legacy = 1;
 	return ret;
 #elif defined(PCI_MAGIC_IO_RANGE)
 	ret->memory = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED,
@@ -431,6 +433,7 @@ pci_device_openbsd_open_legacy_io(struct pci_io_handle *ret,
 
 	ret->base = base;
 	ret->size = size;
+	ret->is_legacy = 1;
 	return ret;
 #else
 	return NULL;
