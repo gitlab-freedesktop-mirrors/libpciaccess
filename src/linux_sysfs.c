@@ -593,8 +593,8 @@ pci_device_linux_sysfs_map_range(struct pci_device *dev,
 	    /* FIXME: Should we report an error in this case?
 	     */
 	    fprintf(stderr, "error setting MTRR "
-		    "(base = 0x%08lx, size = 0x%08x, type = %u) %s (%d)\n",
-		    sentry.base, sentry.size, sentry.type,
+		    "(base = 0x%016" PRIx64 ", size = 0x%08x, type = %u) %s (%d)\n",
+		    (pciaddr_t)sentry.base, sentry.size, sentry.type,
 		    strerror(errno), errno);
 /*            err = errno;*/
 	}
@@ -668,8 +668,8 @@ pci_device_linux_sysfs_unmap_range(struct pci_device *dev,
 	    /* FIXME: Should we report an error in this case?
 	     */
 	    fprintf(stderr, "error setting MTRR "
-		    "(base = 0x%08lx, size = 0x%08x, type = %u) %s (%d)\n",
-		    sentry.base, sentry.size, sentry.type,
+		    "(base = 0x%016" PRIx64 ", size = 0x%08x, type = %u) %s (%d)\n",
+		    (pciaddr_t)sentry.base, sentry.size, sentry.type,
 		    strerror(errno), errno);
 /*            err = errno;*/
 	}
