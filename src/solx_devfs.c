@@ -724,6 +724,9 @@ pci_device_solx_devfs_map_range(struct pci_device *dev,
 			   strerror(errno));
 	    return err;
 	}
+#ifndef __sparc
+        xsvc_fd = map_fd;
+#endif
     }
 
     map->memory = mmap(NULL, map->size, prot, MAP_SHARED, map_fd, map->base);
