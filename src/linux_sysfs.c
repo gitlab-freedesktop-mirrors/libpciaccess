@@ -49,6 +49,7 @@
 #include <sys/mman.h>
 #include <dirent.h>
 #include <errno.h>
+#include <limits.h>
 
 #if defined(__i386__) || defined(__x86_64__) || defined(__arm__)
 #include <sys/io.h>
