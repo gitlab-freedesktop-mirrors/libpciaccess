@@ -45,7 +45,10 @@
 #include <sys/mman.h>
 #include <sys/memrange.h>
 
+#ifdef HAVE_CONFIG_H
 #include "config.h"
+#endif
+
 #include "pciaccess.h"
 #include "pciaccess_private.h"
 

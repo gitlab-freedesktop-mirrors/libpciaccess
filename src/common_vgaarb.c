@@ -33,7 +33,10 @@
 #include <stdlib.h>
 #include <limits.h>
 
+#ifdef HAVE_CONFIG_H
 #include "config.h"
+#endif
+
 #include "pciaccess.h"
 #include "pciaccess_private.h"
 

@@ -57,7 +57,9 @@
 #define iopl(x) -1
 #endif
 
+#ifdef HAVE_CONFIG_H
 #include "config.h"
+#endif
 
 #ifdef HAVE_MTRR
 #include <asm/mtrr.h>
