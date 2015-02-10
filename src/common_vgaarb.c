@@ -25,6 +25,10 @@
  *
  */
 
+#ifdef HAVE_CONFIG_H
+#include "config.h"
+#endif
+
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
@@ -32,10 +36,6 @@
 #include <errno.h>
 #include <stdlib.h>
 #include <limits.h>
-
-#ifdef HAVE_CONFIG_H
-#include "config.h"
-#endif
 
 #include "pciaccess.h"
 #include "pciaccess_private.h"

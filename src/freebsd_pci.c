@@ -33,6 +33,10 @@
  * \author Eric Anholt <eric@anholt.net>
  */
 
+#ifdef HAVE_CONFIG_H
+#include "config.h"
+#endif
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -44,10 +48,6 @@
 #include <sys/pciio.h>
 #include <sys/mman.h>
 #include <sys/memrange.h>
-
-#ifdef HAVE_CONFIG_H
-#include "config.h"
-#endif
 
 #include "pciaccess.h"
 #include "pciaccess_private.h"

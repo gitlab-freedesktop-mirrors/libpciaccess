@@ -34,6 +34,10 @@
 
 #define _GNU_SOURCE
 
+#ifdef HAVE_CONFIG_H
+#include "config.h"
+#endif
+
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -55,10 +59,6 @@
 #define outw(x,y) do {} while (0)
 #define outl(x,y) do {} while (0)
 #define iopl(x) -1
-#endif
-
-#ifdef HAVE_CONFIG_H
-#include "config.h"
 #endif
 
 #ifdef HAVE_MTRR
