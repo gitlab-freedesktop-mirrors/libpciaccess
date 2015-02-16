@@ -77,12 +77,16 @@ case $host_os in
 	*netbsd*)
 		case $host in
 		*i[3-9]86*)
-			PCIACCESS_LIBS="$PCIACCESS_LIBS -li386 -lpci"
+			PCIACCESS_LIBS="$PCIACCESS_LIBS -li386"
 			;;
 		*x86_64*|*amd64*)
-			PCIACCESS_LIBS="$PCIACCESS_LIBS -lx86_64 -lpci"
+			PCIACCESS_LIBS="$PCIACCESS_LIBS -lx86_64"
+			;;
+		*alpha*)
+			PCIACCESS_LIBS="$PCIACCESS_LIBS -lalpha"
 			;;
 		esac
+		PCIACCESS_LIBS="$PCIACCESS_LIBS -lpci"
 		netbsd=yes
 		;;
 	*openbsd*)
