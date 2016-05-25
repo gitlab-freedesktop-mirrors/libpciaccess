@@ -1,6 +1,6 @@
 /*
  * (C) Copyright IBM Corporation 2006
- * Copyright (c) 2007, 2009, 2011, 2012, 2013 Oracle and/or its affiliates.
+ * Copyright (c) 2007, 2009, 2011, 2012, 2015 Oracle and/or its affiliates.
  * All Rights Reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
@@ -62,7 +62,6 @@ typedef struct i_devnode {
 } i_devnode_t;
 
 typedef struct nexus {
-    int fd;
     int first_bus;
     int last_bus;
     int domain;
@@ -146,7 +145,6 @@ pci_system_solx_devfs_destroy( void )
 
     for (nexus = nexus_list ; nexus != NULL ; nexus = next) {
 	next = nexus->next;
-	close(nexus->fd);
 	free(nexus->path);
 	free(nexus->dev_path);
 	free(nexus);
@@ -306,7 +304,6 @@ probe_nexus_node(di_node_t di_node, di_minor_t minor, void *arg)
     di_prom_prop_t prom_prop;
 #endif
 
-
 #ifdef DEBUG
     nexus_name = di_devfs_minor_path(minor);
     fprintf(stderr, "-- device name: %s\n", nexus_name);
@@ -421,7 +418,6 @@ probe_nexus_node(di_node_t di_node, di_minor_t minor, void *arg)
     if ((fd = open(nexus_path, O_RDWR | O_CLOEXEC)) >= 0) {
 	probe_args_t args;
 
-	nexus->fd = fd;
 	nexus->path = strdup(nexus_path);
 	nexus_dev_path = di_devfs_path(di_node);
 	nexus->dev_path = strdup(nexus_dev_path);
@@ -429,7 +425,7 @@ probe_nexus_node(di_node_t di_node, di_minor_t minor, void *arg)
 
 	if ((rnode = di_init(nexus->dev_path, DINFOCPYALL)) == DI_NODE_NIL) {
 	    (void) fprintf(stderr, "di_init failed: %s\n", strerror(errno));
-	    close(nexus->fd);
+	    close(fd);
 	    free(nexus->path);
 	    free(nexus->dev_path);
 	    free(nexus);
@@ -442,8 +438,10 @@ probe_nexus_node(di_node_t di_node, di_minor_t minor, void *arg)
 	args.ret = 0;
 
 	(void) di_walk_node(rnode, DI_WALK_CLDFIRST, (void *)&args, probe_device_node);
+
+	close(fd);
+
 	if (args.ret) {
-	    close(nexus->fd);
 	    free(nexus->path);
 	    free(nexus->dev_path);
 	    free(nexus);
@@ -790,6 +788,7 @@ pci_device_solx_devfs_read( struct pci_device * dev, void * data,
     int err = 0;
     unsigned int i = 0;
     nexus_t *nexus;
+    int fd;
 
     nexus = find_nexus_for_bus(dev->domain, dev->bus);
 
@@ -807,11 +806,14 @@ pci_device_solx_devfs_read( struct pci_device * dev, void * data,
     cfg_prg.barnum = 0;
     cfg_prg.user_version = PCITOOL_USER_VERSION;
 
+    if ((fd = open(nexus->path, O_RDWR | O_CLOEXEC)) < 0)
+	return ENOENT;
+
     for (i = 0; i < size; i += PCITOOL_ACC_ATTR_SIZE(PCITOOL_ACC_ATTR_SIZE_1))
     {
 	cfg_prg.offset = offset + i;
 
-	if ((err = ioctl(nexus->fd, PCITOOL_DEVICE_GET_REG, &cfg_prg)) != 0) {
+	if ((err = ioctl(fd, PCITOOL_DEVICE_GET_REG, &cfg_prg)) != 0) {
 	    fprintf(stderr, "read bdf<%s,%x,%x,%x,%llx> config space failure\n",
 		    nexus->path,
 		    cfg_prg.bus_no,
@@ -829,6 +831,8 @@ pci_device_solx_devfs_read( struct pci_device * dev, void * data,
     }
     *bytes_read = i;
 
+    close(fd);
+
     return (err);
 }
 
@@ -844,6 +848,7 @@ pci_device_solx_devfs_write( struct pci_device * dev, const void * data,
     int err = 0;
     int cmd;
     nexus_t *nexus;
+    int fd;
 
     nexus = find_nexus_for_bus(dev->domain, dev->bus);
 
@@ -891,10 +896,16 @@ pci_device_solx_devfs_write( struct pci_device * dev, const void * data,
      */
     cmd = PCITOOL_DEVICE_SET_REG;
 
-    if ((err = ioctl(nexus->fd, cmd, &cfg_prg)) != 0) {
+    if ((fd = open(nexus->path, O_RDWR | O_CLOEXEC)) < 0)
+	return ENOENT;
+
+    if ((err = ioctl(fd, cmd, &cfg_prg)) != 0) {
+	close(fd);
 	return (err);
     }
     *bytes_written = size;
+
+    close(fd);
 
     return (err);
 }
