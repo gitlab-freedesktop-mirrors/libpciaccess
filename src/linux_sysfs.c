@@ -119,18 +119,28 @@ pci_system_linux_sysfs_create( void )
 
 
 /**
- * Filter out the names "." and ".." from the scanned sysfs entries.
+ * Filter out the names "." and ".." from the scanned sysfs entries, and
+ * domains requiring 32-bits.
  *
  * \param d  Directory entry being processed by \c scandir.
  *
  * \return
- * Zero if the entry name matches either "." or "..", non-zero otherwise.
+ * Zero if the entry name matches either "." or "..", or the domain requires
+ * 32 bits, non-zero otherwise.
  *
  * \sa scandir, populate_entries
  */
 static int
 scan_sys_pci_filter( const struct dirent * d )
 {
+    if (d->d_name[0] != '.') {
+        unsigned dom = 0;
+
+        sscanf(d->d_name, "%x:", &dom);
+        if (dom > USHRT_MAX)
+            return 0;
+    }
+
     return !((strcmp( d->d_name, "." ) == 0)
 	     || (strcmp( d->d_name, ".." ) == 0));
 }
