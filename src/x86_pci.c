@@ -1131,34 +1131,12 @@ static int pci_probe(void)
 _pci_hidden int
 pci_system_x86_create(void)
 {
-    uint8_t nfuncs = 0;
-    uint8_t bus, dev, func;
-    uint32_t reg = 0, ndevs;
-    struct pci_device tmpdev = { 0 };
-    struct pci_device_private *device;
     error_t err;
     int confx;
 
     err = x86_enable_io ();
     if (err)
         return err;
-
-    ndevs = 0;
-    for (bus = 0; bus < 256; bus++) {
-       tmpdev.bus = bus;
-       for (dev = 0; dev < 32; dev++) {
-           tmpdev.dev = dev;
-           pci_nfuncs(&tmpdev, &nfuncs);
-           for (func = 0; func < nfuncs; func++) {
-               if (pci_device_cfg_read_u32(&tmpdev, &reg, PCI_VENDOR_ID))
-                   continue;
-               if (PCI_VENDOR(reg) == PCI_VENDOR_INVALID ||
-                   PCI_VENDOR(reg) == 0)
-                   continue;
-               ndevs++;
-           }
-       }
-    }
 
     pci_sys = calloc (1, sizeof (struct pci_system));
     if (pci_sys == NULL)
@@ -1167,17 +1145,9 @@ pci_system_x86_create(void)
         return ENOMEM;
     }
 
-    pci_sys->num_devices = ndevs;
-    pci_sys->devices = calloc(ndevs, sizeof(struct pci_device_private));
-    if (pci_sys->devices == NULL) {
-        x86_disable_io();
-        free(pci_sys);
-        pci_sys = NULL;
-        return ENOMEM;
-    }
-
     confx = pci_probe ();
-    if (!confx) {
+    if (!confx)
+    {
         x86_disable_io ();
         free (pci_sys);
         pci_sys = NULL;
@@ -1188,45 +1158,15 @@ pci_system_x86_create(void)
     else
         pci_sys->methods = &x86_pci_method_conf2;
 
-    device = pci_sys->devices;
-    for (bus = 0; bus < 256; bus++) {
-       tmpdev.bus = bus;
-       for (dev = 0; dev < 32; dev++) {
-           tmpdev.dev = dev;
-           err = pci_nfuncs(&tmpdev, &nfuncs);
-           if (err) {
-               x86_disable_io ();
-               free (pci_sys);
-               pci_sys = NULL;
-               return ENODEV;
-           }
-           for (func = 0; func < nfuncs; func++) {
-               tmpdev.func = func;
-               if (pci_device_cfg_read_u32(&tmpdev, &reg, PCI_VENDOR_ID))
-                   continue;
-               if (PCI_VENDOR(reg) == PCI_VENDOR_INVALID ||
-                   PCI_VENDOR(reg) == 0)
-                   continue;
-               device->base.domain = device->base.domain_16 = 0;
-               device->base.bus = bus;
-               device->base.dev = dev;
-               device->base.func = func;
-               device->base.vendor_id = PCI_VENDOR(reg);
-               device->base.device_id = PCI_DEVICE(reg);
-
-               if (pci_device_cfg_read_u32(&tmpdev, &reg, PCI_CLASS))
-                   continue;
-               device->base.device_class = (reg >> 8) & 0xFF;
-               device->base.revision = reg & 0xFF;
-
-               if (pci_device_cfg_read_u32(&tmpdev, &reg, PCI_SUB_VENDOR_ID))
-                   continue;
-               device->base.subvendor_id = PCI_VENDOR(reg);
-               device->base.subdevice_id = PCI_DEVICE(reg);
-
-               device++;
-           }
-       }
+    /* Recursive scan */
+    pci_sys->num_devices = 0;
+    err = pci_system_x86_scan_bus (0);
+    if (err)
+    {
+        x86_disable_io ();
+        free (pci_sys);
+        pci_sys = NULL;
+        return err;
     }
 
     return 0;
