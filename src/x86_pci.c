@@ -508,75 +508,301 @@ get_test_val_size( uint32_t testval )
     return size;
 }
 
-static int
-pci_device_x86_probe(struct pci_device *dev)
+/* Read BAR `reg_num' in `dev' and map the data if any */
+static error_t
+pci_device_x86_region_probe (struct pci_device *dev, int reg_num)
 {
-    uint8_t irq, hdrtype;
-    int err, i, bar;
+    error_t err;
+    uint8_t offset;
+    uint32_t reg, addr, testval;
+    int memfd;
 
-    /* Many of the fields were filled in during initial device enumeration.
-     * At this point, we need to fill in regions, rom_size, and irq.
-     */
+    offset = PCI_BAR_ADDR_0 + 0x4 * reg_num;
 
-    err = pci_device_cfg_read_u8(dev, &irq, PCI_IRQ);
+    /* Get the base address */
+    err = pci_device_cfg_read_u32 (dev, &addr, offset);
     if (err)
-	return err;
-    dev->irq = irq;
+        return err;
 
-    err = pci_device_cfg_read_u8(dev, &hdrtype, PCI_HDRTYPE);
+    /* Test write all ones to the register, then restore it. */
+    reg = 0xffffffff;
+    err = pci_device_cfg_write_u32 (dev, reg, offset);
     if (err)
-	return err;
+        return err;
+    err = pci_device_cfg_read_u32 (dev, &testval, offset);
+    if (err)
+        return err;
+    err = pci_device_cfg_write_u32 (dev, addr, offset);
+    if (err)
+        return err;
 
-    bar = 0x10;
-    for (i = 0; i < pci_device_x86_get_num_regions(hdrtype); i++, bar += 4) {
-	uint32_t addr, testval;
+    if (addr & 0x01)
+        dev->regions[reg_num].is_IO = 1;
+    if (addr & 0x04)
+        dev->regions[reg_num].is_64 = 1;
+    if (addr & 0x08)
+        dev->regions[reg_num].is_prefetchable = 1;
 
-	/* Get the base address */
-	err = pci_device_cfg_read_u32(dev, &addr, bar);
-	if (err != 0)
-	    continue;
+    /* Set the size */
+    dev->regions[reg_num].size = get_test_val_size (testval);
 
-	/* Test write all ones to the register, then restore it. */
-	err = pci_device_cfg_write_u32(dev, 0xffffffff, bar);
-	if (err != 0)
-	    continue;
-	pci_device_cfg_read_u32(dev, &testval, bar);
-	err = pci_device_cfg_write_u32(dev, addr, bar);
+    /* Set the base address value */
+    dev->regions[reg_num].base_addr = get_map_base (addr);
 
-	if (addr & 0x01)
-	    dev->regions[i].is_IO = 1;
-	if (addr & 0x04)
-	    dev->regions[i].is_64 = 1;
-	if (addr & 0x08)
-	    dev->regions[i].is_prefetchable = 1;
+    if (dev->regions[reg_num].is_64)
+    {
+        err = pci_device_cfg_read_u32 (dev, &addr, offset + 4);
+        if (err)
+            return err;
 
-	/* Set the size */
-	dev->regions[i].size = get_test_val_size(testval);
-
-	/* Set the base address value */
-	if (dev->regions[i].is_64) {
-	    uint32_t top;
-
-	    err = pci_device_cfg_read_u32(dev, &top, bar + 4);
-	    if (err != 0)
-		continue;
-
-	    dev->regions[i].base_addr = ((uint64_t)top << 32) |
-					get_map_base(addr);
-	    bar += 4;
-	    i++;
-	} else {
-	    dev->regions[i].base_addr = get_map_base(addr);
-	}
+        dev->regions[reg_num].base_addr |= ((uint64_t) addr << 32);
     }
 
-    /* If it's a VGA device, set up the rom size for read_rom using the
-     * 0xc0000 mapping.
-     */
-    if ((dev->device_class & 0x00ffff00) ==
-	((PCIC_DISPLAY << 16) | (PCIS_DISPLAY_VGA << 8)))
+    if (dev->regions[reg_num].is_IO)
     {
-	dev->rom_size = 64 * 1024;
+        /* Enable the I/O Space bit */
+        err = pci_device_cfg_read_u32 (dev, &reg, PCI_COMMAND);
+        if (err)
+            return err;
+
+        if (!(reg & 0x1))
+        {
+            reg |= 0x1;
+
+            err = pci_device_cfg_write_u32 (dev, reg, PCI_COMMAND);
+            if (err)
+                return err;
+        }
+
+        /* Clear the map pointer */
+        dev->regions[reg_num].memory = 0;
+    }
+    else if (dev->regions[reg_num].size > 0)
+    {
+        /* Enable the Memory Space bit */
+        err = pci_device_cfg_read_u32 (dev, &reg, PCI_COMMAND);
+        if (err)
+            return err;
+
+        if (!(reg & 0x2))
+        {
+            reg |= 0x2;
+
+            err = pci_device_cfg_write_u32 (dev, reg, PCI_COMMAND);
+            if (err)
+                return err;
+        }
+
+        /* Map the region in our space */
+        memfd = open ("/dev/mem", O_RDONLY | O_CLOEXEC);
+        if (memfd == -1)
+            return errno;
+
+        dev->regions[reg_num].memory =
+         mmap (NULL, dev->regions[reg_num].size, PROT_READ | PROT_WRITE, 0,
+               memfd, dev->regions[reg_num].base_addr);
+        if (dev->regions[reg_num].memory == MAP_FAILED)
+        {
+            dev->regions[reg_num].memory = 0;
+            close (memfd);
+            return errno;
+        }
+
+        close (memfd);
+    }
+
+    return 0;
+}
+
+/* Read the XROMBAR in `dev' and save the rom size and rom base */
+static error_t
+pci_device_x86_probe_rom (struct pci_device *dev)
+{
+    error_t err;
+    uint8_t reg_8, xrombar_addr;
+    uint32_t reg, reg_back;
+    pciaddr_t rom_size;
+    pciaddr_t rom_base;
+    struct pci_device_private *d = (struct pci_device_private *)dev;
+
+    /* First we need to know which type of header is this */
+    err = pci_device_cfg_read_u8 (dev, &reg_8, PCI_HDRTYPE);
+    if (err)
+        return err;
+
+    /* Get the XROMBAR register address */
+    switch (reg_8 & 0x3)
+    {
+    case PCI_HDRTYPE_DEVICE:
+        xrombar_addr = PCI_XROMBAR_ADDR_00;
+        break;
+    case PCI_HDRTYPE_BRIDGE:
+        xrombar_addr = PCI_XROMBAR_ADDR_01;
+        break;
+    default:
+        return -1;
+    }
+
+    /* Get size and physical address */
+    err = pci_device_cfg_read_u32 (dev, &reg, xrombar_addr);
+    if (err)
+        return err;
+
+    reg_back = reg;
+    reg = 0xFFFFF800;            /* Base address: first 21 bytes */
+    err = pci_device_cfg_write_u32 (dev, reg, xrombar_addr);
+    if (err)
+        return err;
+    err = pci_device_cfg_read_u32 (dev, &reg, xrombar_addr);
+    if (err)
+        return err;
+
+    rom_size = (~reg + 1);
+    rom_base = reg_back & reg;
+
+    if (rom_size == 0)
+        return 0;
+
+    /* Enable the address decoder and write the physical address back */
+    reg_back |= 0x1;
+    err = pci_device_cfg_write_u32 (dev, reg_back, xrombar_addr);
+    if (err)
+        return err;
+
+    /* Enable the Memory Space bit */
+    err = pci_device_cfg_read_u32 (dev, &reg, PCI_COMMAND);
+    if (err)
+        return err;
+
+    if (!(reg & 0x2))
+    {
+        reg |= 0x2;
+
+        err = pci_device_cfg_write_u32 (dev, reg, PCI_COMMAND);
+        if (err)
+            return err;
+    }
+
+    dev->rom_size = rom_size;
+    d->rom_base = rom_base;
+
+    return 0;
+}
+
+/* Configure BARs and ROM */
+static error_t
+pci_device_x86_probe (struct pci_device *dev)
+{
+    error_t err;
+    uint8_t hdrtype;
+    int i;
+
+    /* Probe BARs */
+    err = pci_device_cfg_read_u8 (dev, &hdrtype, PCI_HDRTYPE);
+    if (err)
+        return err;
+
+    for (i = 0; i < pci_device_x86_get_num_regions (hdrtype); i++)
+    {
+        err = pci_device_x86_region_probe (dev, i);
+        if (err)
+            return err;
+
+        if (dev->regions[i].is_64)
+            /* Move the pointer one BAR ahead */
+            i++;
+    }
+
+    /* Probe ROM */
+    pci_device_x86_probe_rom(dev);
+
+    return 0;
+}
+
+/* Recursively scan bus number `bus' */
+static error_t
+pci_system_x86_scan_bus (uint8_t bus)
+{
+    error_t err;
+    uint8_t dev, func, nfuncs, hdrtype, secbus;
+    uint32_t reg;
+    struct pci_device_private *d, *devices;
+    struct pci_device scratchdev;
+
+    scratchdev.bus = bus;
+
+    for (dev = 0; dev < 32; dev++)
+    {
+        scratchdev.dev = dev;
+        scratchdev.func = 0;
+        err = pci_nfuncs (&scratchdev, &nfuncs);
+        if (err)
+           return err;
+
+        for (func = 0; func < nfuncs; func++)
+        {
+            scratchdev.func = func;
+            err = pci_device_cfg_read_u32 (&scratchdev, &reg, PCI_VENDOR_ID);
+            if (err)
+                return err;
+
+            if (PCI_VENDOR (reg) == PCI_VENDOR_INVALID || PCI_VENDOR (reg) == 0)
+                continue;
+
+            err = pci_device_cfg_read_u32 (&scratchdev, &reg, PCI_CLASS);
+            if (err)
+                return err;
+
+            err = pci_device_cfg_read_u8 (&scratchdev, &hdrtype, PCI_HDRTYPE);
+            if (err)
+                return err;
+
+            devices =
+              realloc (pci_sys->devices,
+                       (pci_sys->num_devices + 1) * sizeof (struct pci_device_private));
+            if (!devices)
+                return ENOMEM;
+
+            d = devices + pci_sys->num_devices;
+            memset (d, 0, sizeof (struct pci_device_private));
+
+            /* Fixed values as PCI express is still not supported */
+            d->base.domain = 0;
+            d->base.bus = bus;
+            d->base.dev = dev;
+            d->base.func = func;
+
+            d->base.device_class = reg >> 8;
+
+            err = pci_device_x86_probe (&d->base);
+            if (err)
+                return err;
+
+            pci_sys->devices = devices;
+            pci_sys->num_devices++;
+
+            switch (hdrtype & 0x3)
+            {
+            case PCI_HDRTYPE_DEVICE:
+                break;
+            case PCI_HDRTYPE_BRIDGE:
+            case PCI_HDRTYPE_CARDBUS:
+                {
+                    err = pci_device_cfg_read_u8 (&scratchdev, &secbus, PCI_SECONDARY_BUS);
+                    if (err)
+                        return err;
+
+                    err = pci_system_x86_scan_bus (secbus);
+                    if (err)
+                        return err;
+
+                    break;
+                }
+            default:
+                /* Unknown header, do nothing */
+                break;
+            }
+        }
     }
 
     return 0;
