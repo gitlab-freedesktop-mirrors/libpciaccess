@@ -52,30 +52,30 @@
 #include "pciaccess.h"
 #include "pciaccess_private.h"
 
-#define	PCIC_DISPLAY	0x03
+#define	PCIC_DISPLAY		0x03
 #define	PCIS_DISPLAY_VGA	0x00
 #define	PCIS_DISPLAY_XGA	0x01
 #define	PCIS_DISPLAY_3D		0x02
 #define	PCIS_DISPLAY_OTHER	0x80
 
 /* Registers taken from pcireg.h */
-#define PCIR_COMMAND    0x04
-#define PCIM_CMD_PORTEN         0x0001
-#define PCIM_CMD_MEMEN          0x0002
-#define PCIR_BIOS	0x30
+#define PCIR_COMMAND		0x04
+#define PCIM_CMD_PORTEN		0x0001
+#define PCIM_CMD_MEMEN		0x0002
+#define PCIR_BIOS		0x30
 #define PCIM_BIOS_ENABLE	0x01
 #define PCIM_BIOS_ADDR_MASK	0xfffff800
 
-#define PCIR_BARS       0x10
-#define PCIR_BAR(x)             (PCIR_BARS + (x) * 4)
-#define PCI_BAR_IO(x)           (((x) & PCIM_BAR_SPACE) == PCIM_BAR_IO_SPACE)
-#define PCI_BAR_MEM(x)          (((x) & PCIM_BAR_SPACE) == PCIM_BAR_MEM_SPACE)
-#define PCIM_BAR_MEM_TYPE       0x00000006
-#define PCIM_BAR_MEM_64         4
-#define PCIM_BAR_MEM_PREFETCH   0x00000008
-#define PCIM_BAR_SPACE          0x00000001
-#define PCIM_BAR_MEM_SPACE      0
-#define PCIM_BAR_IO_SPACE       1
+#define PCIR_BARS		0x10
+#define PCIR_BAR(x)		(PCIR_BARS + (x) * 4)
+#define PCI_BAR_IO(x)		(((x) & PCIM_BAR_SPACE) == PCIM_BAR_IO_SPACE)
+#define PCI_BAR_MEM(x)		(((x) & PCIM_BAR_SPACE) == PCIM_BAR_MEM_SPACE)
+#define PCIM_BAR_MEM_TYPE	0x00000006
+#define PCIM_BAR_MEM_64		4
+#define PCIM_BAR_MEM_PREFETCH	0x00000008
+#define PCIM_BAR_SPACE		0x00000001
+#define PCIM_BAR_MEM_SPACE	0
+#define PCIM_BAR_IO_SPACE	1
 
 /**
  * FreeBSD private pci_system structure that extends the base pci_system
@@ -103,8 +103,8 @@ struct freebsd_pci_system {
  * Zero on success or an \c errno value on failure.
  */
 static int
-pci_device_freebsd_map_range(struct pci_device *dev,
-			     struct pci_device_mapping *map)
+pci_device_freebsd_map_range( struct pci_device *dev,
+			      struct pci_device_mapping *map )
 {
     const int prot = ((map->flags & PCI_DEV_MAP_FLAG_WRITABLE) != 0)
         ? (PROT_READ | PROT_WRITE) : PROT_READ;
@@ -559,7 +559,7 @@ pci_device_freebsd_probe( struct pci_device * dev )
 #endif
 
 static void
-pci_system_freebsd_destroy(void)
+pci_system_freebsd_destroy( void )
 {
     close(freebsd_pci_sys->pcidev);
     free(freebsd_pci_sys->pci_sys.devices);
@@ -571,31 +571,32 @@ pci_system_freebsd_destroy(void)
 #endif
 
 static struct pci_io_handle *
-pci_device_freebsd_open_legacy_io(struct pci_io_handle *ret,
-    struct pci_device *dev, pciaddr_t base, pciaddr_t size)
+pci_device_freebsd_open_legacy_io( struct pci_io_handle *ret,
+				   struct pci_device *dev, pciaddr_t base,
+				   pciaddr_t size )
 {
 #if defined(__i386__) || defined(__amd64__)
-	ret->fd = open("/dev/io", O_RDWR | O_CLOEXEC);
+    ret->fd = open( "/dev/io", O_RDWR | O_CLOEXEC );
 
-	if (ret->fd < 0)
-		return NULL;
-
-	ret->base = base;
-	ret->size = size;
-	ret->is_legacy = 1;
-	return ret;
-#elif defined(PCI_MAGIC_IO_RANGE)
-	ret->memory = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED,
-	    aperturefd, PCI_MAGIC_IO_RANGE + base);
-	if (ret->memory == MAP_FAILED)
-		return NULL;
-
-	ret->base = base;
-	ret->size = size;
-	ret->is_legacy = 1;
-	return ret;
-#else
+    if ( ret->fd < 0 )
 	return NULL;
+
+    ret->base = base;
+    ret->size = size;
+    ret->is_legacy = 1;
+    return ret;
+#elif defined(PCI_MAGIC_IO_RANGE)
+    ret->memory = mmap( NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED,
+	aperturefd, PCI_MAGIC_IO_RANGE + base );
+    if ( ret->memory == MAP_FAILED )
+	return NULL;
+
+    ret->base = base;
+    ret->size = size;
+    ret->is_legacy = 1;
+    return ret;
+#else
+    return NULL;
 #endif
 }
 
@@ -612,103 +613,104 @@ pci_device_freebsd_open_io( struct pci_io_handle *ret,
 
 #if defined(__i386__) || defined(__amd64__)
 static void
-pci_device_freebsd_close_io(struct pci_device *dev, struct pci_io_handle *handle)
+pci_device_freebsd_close_io( struct pci_device *dev,
+			     struct pci_io_handle *handle )
 {
-	if (handle->fd > -1)
-		close(handle->fd);
+    if ( handle->fd > -1 )
+	close( handle->fd );
 }
 #endif
 
 static uint32_t
-pci_device_freebsd_read32(struct pci_io_handle *handle, uint32_t reg)
+pci_device_freebsd_read32( struct pci_io_handle *handle, uint32_t reg )
 {
 #if defined(__i386__) || defined(__amd64__)
-	return inl(handle->base + reg);
+    return inl( handle->base + reg );
 #else
-	return *(uint32_t *)((uintptr_t)handle->memory + reg);
+    return *(uint32_t *)((uintptr_t)handle->memory + reg);
 #endif
 }
 
 static uint16_t
-pci_device_freebsd_read16(struct pci_io_handle *handle, uint32_t reg)
+pci_device_freebsd_read16( struct pci_io_handle *handle, uint32_t reg )
 {
 #if defined(__i386__) || defined(__amd64__)
-	return inw(handle->base + reg);
+    return inw( handle->base + reg );
 #else
-	return *(uint16_t *)((uintptr_t)handle->memory + reg);
+    return *(uint16_t *)((uintptr_t)handle->memory + reg);
 #endif
 }
 
 static uint8_t
-pci_device_freebsd_read8(struct pci_io_handle *handle, uint32_t reg)
+pci_device_freebsd_read8( struct pci_io_handle *handle, uint32_t reg )
 {
 #if defined(__i386__) || defined(__amd64__)
-	return inb(handle->base + reg);
+    return inb( handle->base + reg );
 #else
-	return *(uint8_t *)((uintptr_t)handle->memory + reg);
+    return *(uint8_t *)((uintptr_t)handle->memory + reg);
 #endif
 }
 
 static void
-pci_device_freebsd_write32(struct pci_io_handle *handle, uint32_t reg,
-    uint32_t data)
+pci_device_freebsd_write32( struct pci_io_handle *handle, uint32_t reg,
+			    uint32_t data )
 {
 #if defined(__i386__) || defined(__amd64__)
-	outl(handle->base + reg, data);
+    outl( handle->base + reg, data );
 #else
-	*(uint16_t *)((uintptr_t)handle->memory + reg) = data;
+    *(uint16_t *)((uintptr_t)handle->memory + reg) = data;
 #endif
 }
 
 static void
-pci_device_freebsd_write16(struct pci_io_handle *handle, uint32_t reg,
-    uint16_t data)
+pci_device_freebsd_write16( struct pci_io_handle *handle, uint32_t reg,
+			    uint16_t data )
 {
 #if defined(__i386__) || defined(__amd64__)
-	outw(handle->base + reg, data);
+    outw( handle->base + reg, data );
 #else
-	*(uint8_t *)((uintptr_t)handle->memory + reg) = data;
+    *(uint8_t *)((uintptr_t)handle->memory + reg) = data;
 #endif
 }
 
 static void
-pci_device_freebsd_write8(struct pci_io_handle *handle, uint32_t reg,
-    uint8_t data)
+pci_device_freebsd_write8( struct pci_io_handle *handle, uint32_t reg,
+			   uint8_t data )
 {
 #if defined(__i386__) || defined(__amd64__)
-	outb(handle->base + reg, data);
+    outb( handle->base + reg, data );
 #else
-	*(uint32_t *)((uintptr_t)handle->memory + reg) = data;
+    *(uint32_t *)((uintptr_t)handle->memory + reg) = data;
 #endif
 }
 
 static int
-pci_device_freebsd_map_legacy(struct pci_device *dev, pciaddr_t base,
-    pciaddr_t size, unsigned map_flags, void **addr)
+pci_device_freebsd_map_legacy( struct pci_device *dev, pciaddr_t base,
+			       pciaddr_t size, unsigned map_flags, void **addr )
 {
-	struct pci_device_mapping map;
-	int err;
+    struct pci_device_mapping map;
+    int err;
 
-	map.base = base;
-	map.size = size;
-	map.flags = map_flags;
-	map.memory = NULL;
-	err = pci_device_freebsd_map_range(dev, &map);
-	*addr = map.memory;
+    map.base = base;
+    map.size = size;
+    map.flags = map_flags;
+    map.memory = NULL;
+    err = pci_device_freebsd_map_range( dev, &map );
+    *addr = map.memory;
 
-	return err;
+    return err;
 }
 
 static int
-pci_device_freebsd_unmap_legacy(struct pci_device *dev, void *addr,
-    pciaddr_t size)
+pci_device_freebsd_unmap_legacy( struct pci_device *dev, void *addr,
+				 pciaddr_t size )
 {
-	struct pci_device_mapping map;
+    struct pci_device_mapping map;
 
-	map.memory = addr;
-	map.size = size;
-	map.flags = 0;
-	return pci_device_freebsd_unmap_range(dev, &map);
+    map.memory = addr;
+    map.size = size;
+    map.flags = 0;
+    return pci_device_freebsd_unmap_range( dev, &map );
 }
 
 static const struct pci_system_methods freebsd_pci_methods = {
