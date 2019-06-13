@@ -187,9 +187,7 @@ pci_device_freebsd_read( struct pci_device * dev, void * data,
 {
     struct pci_io io;
 
-#if HAVE_PCI_IO_PC_DOMAIN
     io.pi_sel.pc_domain = dev->domain;
-#endif
     io.pi_sel.pc_bus = dev->bus;
     io.pi_sel.pc_dev = dev->dev;
     io.pi_sel.pc_func = dev->func;
@@ -227,9 +225,7 @@ pci_device_freebsd_write( struct pci_device * dev, const void * data,
 {
     struct pci_io io;
 
-#if HAVE_PCI_IO_PC_DOMAIN
     io.pi_sel.pc_domain = dev->domain;
-#endif
     io.pi_sel.pc_bus = dev->bus;
     io.pi_sel.pc_dev = dev->dev;
     io.pi_sel.pc_func = dev->func;
@@ -351,9 +347,7 @@ pci_device_freebsd_probe( struct pci_device * dev )
     uint8_t irq;
     int err, i;
 
-#if HAVE_PCI_IO_PC_DOMAIN
     bar.pbi_sel.pc_domain = dev->domain;
-#endif
     bar.pbi_sel.pc_bus = dev->bus;
     bar.pbi_sel.pc_dev = dev->dev;
     bar.pbi_sel.pc_func = dev->func;
@@ -789,11 +783,7 @@ pci_system_freebsd_create( void )
     for ( i = 0; i < pciconfio.num_matches; i++ ) {
 	struct pci_conf *p = &pciconf[ i ];
 
-#if HAVE_PCI_IO_PC_DOMAIN
 	pci_sys->devices[ i ].base.domain = p->pc_sel.pc_domain;
-#else
-	pci_sys->devices[ i ].base.domain = 0;
-#endif
 	pci_sys->devices[ i ].base.bus = p->pc_sel.pc_bus;
 	pci_sys->devices[ i ].base.dev = p->pc_sel.pc_dev;
 	pci_sys->devices[ i ].base.func = p->pc_sel.pc_func;
