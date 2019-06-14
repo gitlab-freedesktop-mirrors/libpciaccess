@@ -652,7 +652,7 @@ pci_device_freebsd_write32( struct pci_io_handle *handle, uint32_t reg,
 #if defined(__i386__) || defined(__amd64__)
     outl( handle->base + reg, data );
 #else
-    *(uint16_t *)((uintptr_t)handle->memory + reg) = data;
+    *(uint32_t *)((uintptr_t)handle->memory + reg) = data;
 #endif
 }
 
@@ -663,7 +663,7 @@ pci_device_freebsd_write16( struct pci_io_handle *handle, uint32_t reg,
 #if defined(__i386__) || defined(__amd64__)
     outw( handle->base + reg, data );
 #else
-    *(uint8_t *)((uintptr_t)handle->memory + reg) = data;
+    *(uint16_t *)((uintptr_t)handle->memory + reg) = data;
 #endif
 }
 
@@ -674,7 +674,7 @@ pci_device_freebsd_write8( struct pci_io_handle *handle, uint32_t reg,
 #if defined(__i386__) || defined(__amd64__)
     outb( handle->base + reg, data );
 #else
-    *(uint32_t *)((uintptr_t)handle->memory + reg) = data;
+    *(uint8_t *)((uintptr_t)handle->memory + reg) = data;
 #endif
 }
 
