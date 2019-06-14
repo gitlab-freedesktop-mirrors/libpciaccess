@@ -43,6 +43,11 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <errno.h>
+#if defined(__i386__) || defined(__amd64__)
+#include <machine/cpufunc.h>
+#else
+#include <dev/io/iodev.h>
+#endif
 #include <sys/types.h>
 #include <sys/param.h>
 #include <sys/pciio.h>
@@ -560,38 +565,25 @@ pci_system_freebsd_destroy( void )
     freebsd_pci_sys = NULL;
 }
 
-#if defined(__i386__) || defined(__amd64__)
-#include <machine/cpufunc.h>
-#endif
-
 static struct pci_io_handle *
 pci_device_freebsd_open_legacy_io( struct pci_io_handle *ret,
 				   struct pci_device *dev, pciaddr_t base,
 				   pciaddr_t size )
 {
-#if defined(__i386__) || defined(__amd64__)
-    ret->fd = open( "/dev/io", O_RDWR | O_CLOEXEC );
-
-    if ( ret->fd < 0 )
-	return NULL;
-
-    ret->base = base;
-    ret->size = size;
-    ret->is_legacy = 1;
-    return ret;
-#elif defined(PCI_MAGIC_IO_RANGE)
+#if defined(PCI_MAGIC_IO_RANGE)
     ret->memory = mmap( NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED,
 	aperturefd, PCI_MAGIC_IO_RANGE + base );
     if ( ret->memory == MAP_FAILED )
 	return NULL;
-
+#else
+    ret->fd = open( "/dev/io", O_RDWR | O_CLOEXEC );
+    if ( ret->fd < 0 )
+	return NULL;
+#endif
     ret->base = base;
     ret->size = size;
     ret->is_legacy = 1;
     return ret;
-#else
-    return NULL;
-#endif
 }
 
 static struct pci_io_handle *
@@ -605,7 +597,6 @@ pci_device_freebsd_open_io( struct pci_io_handle *ret,
     return ret;
 }
 
-#if defined(__i386__) || defined(__amd64__)
 static void
 pci_device_freebsd_close_io( struct pci_device *dev,
 			     struct pci_io_handle *handle )
@@ -613,35 +604,49 @@ pci_device_freebsd_close_io( struct pci_device *dev,
     if ( handle->fd > -1 )
 	close( handle->fd );
 }
-#endif
 
 static uint32_t
 pci_device_freebsd_read32( struct pci_io_handle *handle, uint32_t reg )
 {
-#if defined(__i386__) || defined(__amd64__)
+#if defined(PCI_MAGIC_IO_RANGE)
+    return *(uint32_t *)((uintptr_t)handle->memory + reg);
+#elif defined(__i386__) || defined(__amd64__)
     return inl( handle->base + reg );
 #else
-    return *(uint32_t *)((uintptr_t)handle->memory + reg);
+    struct iodev_pio_req req = { IODEV_PIO_READ, handle->base + reg, 4, 0 };
+    if ( handle->fd > -1 )
+	ioctl( handle->fd, IODEV_PIO, &req );
+    return req.val;
 #endif
 }
 
 static uint16_t
 pci_device_freebsd_read16( struct pci_io_handle *handle, uint32_t reg )
 {
-#if defined(__i386__) || defined(__amd64__)
+#if defined(PCI_MAGIC_IO_RANGE)
+    return *(uint16_t *)((uintptr_t)handle->memory + reg);
+#elif defined(__i386__) || defined(__amd64__)
     return inw( handle->base + reg );
 #else
-    return *(uint16_t *)((uintptr_t)handle->memory + reg);
+    struct iodev_pio_req req = { IODEV_PIO_READ, handle->base + reg, 2, 0 };
+    if ( handle->fd > -1 )
+	ioctl( handle->fd, IODEV_PIO, &req );
+    return req.val;
 #endif
 }
 
 static uint8_t
 pci_device_freebsd_read8( struct pci_io_handle *handle, uint32_t reg )
 {
-#if defined(__i386__) || defined(__amd64__)
+#if defined(PCI_MAGIC_IO_RANGE)
+    return *(uint8_t *)((uintptr_t)handle->memory + reg);
+#elif defined(__i386__) || defined(__amd64__)
     return inb( handle->base + reg );
 #else
-    return *(uint8_t *)((uintptr_t)handle->memory + reg);
+    struct iodev_pio_req req = { IODEV_PIO_READ, handle->base + reg, 1, 0 };
+    if ( handle->fd > -1 )
+	ioctl( handle->fd, IODEV_PIO, &req );
+    return req.val;
 #endif
 }
 
@@ -649,10 +654,14 @@ static void
 pci_device_freebsd_write32( struct pci_io_handle *handle, uint32_t reg,
 			    uint32_t data )
 {
-#if defined(__i386__) || defined(__amd64__)
+#if defined(PCI_MAGIC_IO_RANGE)
+    *(uint32_t *)((uintptr_t)handle->memory + reg) = data;
+#elif defined(__i386__) || defined(__amd64__)
     outl( handle->base + reg, data );
 #else
-    *(uint32_t *)((uintptr_t)handle->memory + reg) = data;
+    struct iodev_pio_req req = { IODEV_PIO_WRITE, handle->base + reg, 4, data };
+    if ( handle->fd > -1 )
+	ioctl( handle->fd, IODEV_PIO, &req );
 #endif
 }
 
@@ -660,10 +669,14 @@ static void
 pci_device_freebsd_write16( struct pci_io_handle *handle, uint32_t reg,
 			    uint16_t data )
 {
-#if defined(__i386__) || defined(__amd64__)
+#if defined(PCI_MAGIC_IO_RANGE)
+    *(uint16_t *)((uintptr_t)handle->memory + reg) = data;
+#elif defined(__i386__) || defined(__amd64__)
     outw( handle->base + reg, data );
 #else
-    *(uint16_t *)((uintptr_t)handle->memory + reg) = data;
+    struct iodev_pio_req req = { IODEV_PIO_WRITE, handle->base + reg, 2, data };
+    if ( handle->fd > -1 )
+	ioctl( handle->fd, IODEV_PIO, &req );
 #endif
 }
 
@@ -671,10 +684,14 @@ static void
 pci_device_freebsd_write8( struct pci_io_handle *handle, uint32_t reg,
 			   uint8_t data )
 {
-#if defined(__i386__) || defined(__amd64__)
+#if defined(PCI_MAGIC_IO_RANGE)
+    *(uint8_t *)((uintptr_t)handle->memory + reg) = data;
+#elif defined(__i386__) || defined(__amd64__)
     outb( handle->base + reg, data );
 #else
-    *(uint8_t *)((uintptr_t)handle->memory + reg) = data;
+    struct iodev_pio_req req = { IODEV_PIO_WRITE, handle->base + reg, 1, data };
+    if ( handle->fd > -1 )
+	ioctl( handle->fd, IODEV_PIO, &req );
 #endif
 }
 
@@ -719,9 +736,7 @@ static const struct pci_system_methods freebsd_pci_methods = {
     .fill_capabilities = pci_fill_capabilities_generic,
     .open_device_io = pci_device_freebsd_open_io,
     .open_legacy_io = pci_device_freebsd_open_legacy_io,
-#if defined(__i386__) || defined(__amd64__)
     .close_io = pci_device_freebsd_close_io,
-#endif
     .read32 = pci_device_freebsd_read32,
     .read16 = pci_device_freebsd_read16,
     .read8 = pci_device_freebsd_read8,
