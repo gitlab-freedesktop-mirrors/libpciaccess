@@ -770,10 +770,15 @@ static const struct pci_system_methods freebsd_pci_methods = {
     .probe = pci_device_freebsd_probe,
     .map_range = pci_device_freebsd_map_range,
     .unmap_range = pci_device_freebsd_unmap_range,
+
     .read = pci_device_freebsd_read,
     .write = pci_device_freebsd_write,
+
     .fill_capabilities = pci_fill_capabilities_generic,
+    .enable = NULL,
+    .boot_vga = NULL,
     .has_kernel_driver = pci_device_freebsd_has_kernel_driver,
+
     .open_device_io = pci_device_freebsd_open_io,
     .open_legacy_io = pci_device_freebsd_open_legacy_io,
     .close_io = pci_device_freebsd_close_io,
@@ -783,6 +788,7 @@ static const struct pci_system_methods freebsd_pci_methods = {
     .write32 = pci_device_freebsd_write32,
     .write16 = pci_device_freebsd_write16,
     .write8 = pci_device_freebsd_write8,
+
     .map_legacy = pci_device_freebsd_map_legacy,
     .unmap_legacy = pci_device_freebsd_unmap_legacy,
 };
