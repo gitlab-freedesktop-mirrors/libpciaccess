@@ -599,6 +599,17 @@ pci_device_freebsd_open_legacy_io(struct pci_io_handle *ret,
 #endif
 }
 
+static struct pci_io_handle *
+pci_device_freebsd_open_io( struct pci_io_handle *ret,
+			    struct pci_device *dev, int bar,
+			    pciaddr_t base, pciaddr_t size )
+{
+    ret = pci_device_freebsd_open_legacy_io( ret, dev, base, size );
+    if ( ret != NULL )
+	ret->is_legacy = 0;
+    return ret;
+}
+
 #if defined(__i386__) || defined(__amd64__)
 static void
 pci_device_freebsd_close_io(struct pci_device *dev, struct pci_io_handle *handle)
@@ -710,6 +721,7 @@ static const struct pci_system_methods freebsd_pci_methods = {
     .read = pci_device_freebsd_read,
     .write = pci_device_freebsd_write,
     .fill_capabilities = pci_fill_capabilities_generic,
+    .open_device_io = pci_device_freebsd_open_io,
     .open_legacy_io = pci_device_freebsd_open_legacy_io,
 #if defined(__i386__) || defined(__amd64__)
     .close_io = pci_device_freebsd_close_io,
