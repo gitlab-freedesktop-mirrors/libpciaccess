@@ -367,7 +367,6 @@ pci_device_freebsd_get_num_regions( struct pci_device * dev )
 static int
 pci_device_freebsd_probe( struct pci_device * dev )
 {
-    struct pci_device_private *priv = (struct pci_device_private *) dev;
     struct pci_bar_io bar;
     uint8_t irq;
     int err, i;
