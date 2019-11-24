@@ -304,8 +304,8 @@ pci_device_hurd_destroy(struct pci_device *dev)
 
 /* Walk through the FS tree to see what is allowed for us */
 static int
-enum_devices(const char *parent, struct pci_device_private **device,
-                int domain, int bus, int dev, int func, tree_level lev)
+enum_devices(const char *parent, int domain,
+    int bus, int dev, int func, tree_level lev)
 {
     int err, ret;
     DIR *dir;
@@ -315,6 +315,7 @@ enum_devices(const char *parent, struct pci_device_private **device,
     uint32_t reg;
     size_t toread;
     mach_port_t device_port;
+    struct pci_device_private *d, *devices;
 
     dir = opendir(parent);
     if (!dir)
@@ -329,8 +330,10 @@ enum_devices(const char *parent, struct pci_device_private **device,
 
             errno = 0;
             ret = strtol(entry->d_name, 0, 16);
-            if (errno)
+            if (errno) {
+                closedir(dir);
                 return errno;
+            }
 
             /*
              * We found a valid directory.
@@ -350,14 +353,18 @@ enum_devices(const char *parent, struct pci_device_private **device,
                 func = ret;
                 break;
             default:
+                if (closedir(dir) < 0)
+                    return errno;
                 return -1;
             }
 
-            err = enum_devices(path, device, domain, bus, dev, func, lev+1);
-            if (err == EPERM)
-                continue;
-        }
-        else {
+            err = enum_devices(path, domain, bus, dev, func, lev+1);
+            if (err && err != EPERM && err != EACCES) {
+                if (closedir(dir) < 0)
+                    return errno;
+                return err;
+            }
+        } else {
             if (strncmp(entry->d_name, FILE_CONFIG_NAME, NAME_MAX))
                 /* We are looking for the config file */
                 continue;
@@ -367,51 +374,86 @@ enum_devices(const char *parent, struct pci_device_private **device,
                      _SERVERS_BUS_PCI, domain, bus, dev, func,
                      entry->d_name);
             device_port = file_name_lookup(server, 0, 0);
-            if (device_port == MACH_PORT_NULL)
+            if (device_port == MACH_PORT_NULL) {
+                closedir(dir);
                 return errno;
+            }
 
             toread = sizeof(reg);
             err = pciclient_cfg_read(device_port, PCI_VENDOR_ID, (char*)&reg,
                                      &toread);
-            if (err)
+            if (err) {
+                if (closedir(dir) < 0)
+                    return errno;
                 return err;
-            if (toread != sizeof(reg))
+            }
+            if (toread != sizeof(reg)) {
+                if (closedir(dir) < 0)
+                    return errno;
                 return -1;
+            }
 
-            (*device)->base.domain = domain;
-            (*device)->base.bus = bus;
-            (*device)->base.dev = dev;
-            (*device)->base.func = func;
-            (*device)->base.vendor_id = PCI_VENDOR(reg);
-            (*device)->base.device_id = PCI_DEVICE(reg);
+            devices = realloc(pci_sys->devices, (pci_sys->num_devices + 1)
+                              * sizeof(struct pci_device_private));
+            if (!devices) {
+                if (closedir(dir) < 0)
+                    return errno;
+                return ENOMEM;
+            }
+
+            d = devices + pci_sys->num_devices;
+            memset(d, 0, sizeof(struct pci_device_private));
+
+            d->base.domain = domain;
+            d->base.bus = bus;
+            d->base.dev = dev;
+            d->base.func = func;
+            d->base.vendor_id = PCI_VENDOR(reg);
+            d->base.device_id = PCI_DEVICE(reg);
 
             toread = sizeof(reg);
             err = pciclient_cfg_read(device_port, PCI_CLASS, (char*)&reg,
                                      &toread);
-            if (err)
+            if (err) {
+                if (closedir(dir) < 0)
+                    return errno;
                 return err;
-            if (toread != sizeof(reg))
+            }
+            if (toread != sizeof(reg)) {
+                if (closedir(dir) < 0)
+                    return errno;
                 return -1;
+            }
 
-            (*device)->base.device_class = reg >> 8;
-            (*device)->base.revision = reg & 0xFF;
+            d->base.device_class = reg >> 8;
+            d->base.revision = reg & 0xFF;
 
             toread = sizeof(reg);
             err = pciclient_cfg_read(device_port, PCI_SUB_VENDOR_ID,
                                      (char*)&reg, &toread);
-            if (err)
+            if (err) {
+                if (closedir(dir) < 0)
+                    return errno;
                 return err;
-            if (toread != sizeof(reg))
+            }
+            if (toread != sizeof(reg)) {
+                if (closedir(dir) < 0)
+                    return errno;
                 return -1;
+            }
 
-            (*device)->base.subvendor_id = PCI_VENDOR(reg);
-            (*device)->base.subdevice_id = PCI_DEVICE(reg);
+            d->base.subvendor_id = PCI_VENDOR(reg);
+            d->base.subdevice_id = PCI_DEVICE(reg);
 
-            (*device)->device_port = device_port;
+            d->device_port = device_port;
 
-            (*device)++;
+            pci_sys->devices = devices;
+            pci_sys->num_devices++;
         }
     }
+
+    if (closedir(dir) < 0)
+        return errno;
 
     return 0;
 }
@@ -438,20 +480,28 @@ static const struct pci_system_methods hurd_pci_methods = {
     .unmap_legacy = pci_device_x86_unmap_legacy,
 };
 
+/* Get the name of the server using libpciaccess if any */
+extern char *netfs_server_name;
+#pragma weak netfs_server_name
+
 _pci_hidden int
 pci_system_hurd_create(void)
 {
-    struct pci_device_private *device;
     int err;
     struct pci_system_hurd *pci_sys_hurd;
-    size_t ndevs;
-    mach_port_t pci_server_port;
 
-    /* If we can open pci cfg io ports on hurd,
-     * we are the arbiter, therefore try x86 method first */
-    err = pci_system_x86_create();
-    if (!err)
-        return 0;
+    if (&netfs_server_name && netfs_server_name
+        && !strcmp(netfs_server_name, "pci-arbiter")) {
+      /* We are a PCI arbiter, try the x86 way */
+      err = pci_system_x86_create();
+      if (!err)
+          return 0;
+    }
+
+    /*
+     * From this point on, we are either a client or a nested arbiter.
+     * Both will connect to a master arbiter.
+     */
 
     pci_sys_hurd = calloc(1, sizeof(struct pci_system_hurd));
     if (pci_sys_hurd == NULL) {
@@ -462,35 +512,14 @@ pci_system_hurd_create(void)
 
     pci_sys->methods = &hurd_pci_methods;
 
-    pci_server_port = file_name_lookup(_SERVERS_BUS_PCI, 0, 0);
-    if (!pci_server_port) {
-        /* Fall back to x86 access method */
-        return pci_system_x86_create();
-    }
-
-    /* The server gives us the number of available devices for us */
-    err = pci_get_ndevs (pci_server_port, &ndevs);
+    pci_sys->num_devices = 0;
+    err = enum_devices(_SERVERS_BUS_PCI, -1, -1, -1, -1, LEVEL_DOMAIN);
     if (err) {
-        mach_port_deallocate (mach_task_self (), pci_server_port);
-        /* Fall back to x86 access method */
-        return pci_system_x86_create();
+      /* There was an error, but we don't know which devices have been
+       * initialized correctly, so call cleanup to free whatever is allocated */
+      pci_system_cleanup();
+      return err;
     }
-    mach_port_deallocate (mach_task_self (), pci_server_port);
-
-    pci_sys->num_devices = ndevs;
-    pci_sys->devices = calloc(ndevs, sizeof(struct pci_device_private));
-    if (pci_sys->devices == NULL) {
-        x86_disable_io();
-        free(pci_sys_hurd);
-        pci_sys = NULL;
-        return ENOMEM;
-    }
-
-    device = pci_sys->devices;
-    err = enum_devices(_SERVERS_BUS_PCI, &device, -1, -1, -1, -1,
-                       LEVEL_DOMAIN);
-    if (err)
-        return pci_system_x86_create();
 
     return 0;
 }
