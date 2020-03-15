@@ -162,7 +162,7 @@ pciclient_cfg_read(mach_port_t device_port, int reg, char *buf,
 
     data = buf;
     nread = *nbytes;
-    err = pci_conf_read(device_port, reg, &data, &nread, *nbytes);
+    err = __pci_conf_read(device_port, reg, &data, &nread, *nbytes);
     if (err)
         return err;
 
@@ -189,7 +189,7 @@ pciclient_cfg_write(mach_port_t device_port, int reg, char *buf,
     int err;
     size_t nwrote;
 
-    err = pci_conf_write(device_port, reg, buf, *nbytes, &nwrote);
+    err = __pci_conf_write(device_port, reg, buf, *nbytes, &nwrote);
 
     if (!err)
         *nbytes = nwrote;
