@@ -211,6 +211,75 @@ outl(uint32_t value, uint16_t port)
 
 #endif
 
+
+#if defined(__GNU__)
+#include <mach.h>
+#include <hurd.h>
+#include <device/device.h>
+#endif
+
+static int
+map_dev_mem(void **dest, size_t mem_offset, size_t mem_size, int write)
+{
+#if defined(__GNU__)
+    int err;
+    mach_port_t master_device;
+    mach_port_t devmem;
+    mach_port_t pager;
+    dev_mode_t mode = D_READ;
+    vm_prot_t prot = VM_PROT_READ;
+
+    if (get_privileged_ports (NULL, &master_device)) {
+        *dest = 0;
+        return EPERM;
+    }
+
+    if (write) {
+        mode |= D_WRITE;
+        prot |= VM_PROT_WRITE;
+    }
+
+    err = device_open (master_device, mode, "mem", &devmem);
+    if (err)
+        return err;
+
+    err = device_map (devmem, prot, 0x0, mem_size, &pager, 0);
+    if (err)
+        return err;
+
+    err = vm_map (mach_task_self (), (vm_address_t *)dest, mem_size,
+                  (vm_address_t) 0, /* mask */
+                  *dest == 0, /* anywhere? */
+                  pager, mem_offset,
+                  0, /* copy */
+                  prot, VM_PROT_ALL, VM_INHERIT_SHARE);
+
+    return err;
+#else
+    int prot = PROT_READ;
+    int flags = O_RDONLY;
+    int memfd;
+
+    if (write) {
+        prot |= PROT_WRITE;
+	flags = O_RDWR;
+    }
+    memfd = open("/dev/mem", flags | O_CLOEXEC);
+    if (memfd == -1)
+	return errno;
+
+    *dest = mmap(NULL, mem_size, prot, MAP_SHARED, memfd, mem_offset);
+    if (*dest == MAP_FAILED) {
+	close(memfd);
+	*dest = NULL;
+	return errno;
+    }
+
+    close(memfd);
+    return 0;
+#endif
+}
+
 static int
 pci_system_x86_conf1_probe(void)
 {
@@ -437,25 +506,15 @@ pci_nfuncs(struct pci_device *dev, uint8_t *nfuncs)
 static error_t
 pci_device_x86_read_rom(struct pci_device *dev, void *buffer)
 {
-    void *bios;
-    int memfd;
+    void *bios = NULL;
     struct pci_device_private *d = (struct pci_device_private *)dev;
 
-    memfd = open("/dev/mem", O_RDONLY | O_CLOEXEC);
-    if (memfd == -1)
-	return errno;
-
-    bios = mmap(NULL, dev->rom_size, PROT_READ, MAP_SHARED, memfd, d->rom_base);
-    if (bios == MAP_FAILED) {
-	close(memfd);
-	return errno;
-    }
+    int err;
+    if ( (err = map_dev_mem(&bios, d->rom_base, dev->rom_size, 0)) )
+        return err;
 
     memcpy(buffer, bios, dev->rom_size);
-
     munmap(bios, dev->rom_size);
-    close(memfd);
-
     return 0;
 }
 
@@ -515,7 +574,6 @@ pci_device_x86_region_probe (struct pci_device *dev, int reg_num)
     error_t err;
     uint8_t offset;
     uint32_t reg, addr, testval;
-    int memfd;
 
     offset = PCI_BAR_ADDR_0 + 0x4 * reg_num;
 
@@ -594,19 +652,11 @@ pci_device_x86_region_probe (struct pci_device *dev, int reg_num)
         }
 
         /* Map the region in our space */
-        memfd = open ("/dev/mem", O_RDWR | O_CLOEXEC);
-        if (memfd == -1)
-            return errno;
-
-        dev->regions[reg_num].memory =
-         mmap (NULL, dev->regions[reg_num].size, PROT_READ | PROT_WRITE, MAP_SHARED,
-               memfd, dev->regions[reg_num].base_addr);
-        if (dev->regions[reg_num].memory == MAP_FAILED)
-        {
-            dev->regions[reg_num].memory = 0;
-            close (memfd);
-            return errno;
-        }
+	if ( (err = map_dev_mem(&dev->regions[reg_num].memory,
+                                dev->regions[reg_num].base_addr,
+                                dev->regions[reg_num].size,
+                                1)) )
+            return err;
     }
 
     return 0;
@@ -845,20 +895,11 @@ int
 pci_device_x86_map_range(struct pci_device *dev,
     struct pci_device_mapping *map)
 {
-    int memfd = open("/dev/mem", O_RDWR | O_CLOEXEC);
-    int prot = PROT_READ;
+    int err;
+    if ( (err = map_dev_mem(&map->memory, map->base,
+                            map->size, map->flags & PCI_DEV_MAP_FLAG_WRITABLE)) )
+        return err;
 
-    if (memfd == -1)
-	return errno;
-
-    if (map->flags & PCI_DEV_MAP_FLAG_WRITABLE)
-	prot |= PROT_WRITE;
-
-    map->memory = mmap(NULL, map->size, prot, MAP_SHARED, memfd, map->base);
-    if (map->memory == MAP_FAILED) {
-    	close(memfd);
-	return errno;
-    }
     return 0;
 }
 
@@ -866,7 +907,11 @@ int
 pci_device_x86_unmap_range(struct pci_device *dev,
     struct pci_device_mapping *map)
 {
-    return pci_device_generic_unmap_range(dev, map);
+    int err;
+    err = pci_device_generic_unmap_range(dev, map);
+    map->memory = NULL;
+
+    return err;
 }
 
 #endif
