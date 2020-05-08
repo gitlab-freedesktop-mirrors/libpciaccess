@@ -631,9 +631,6 @@ pci_device_x86_region_probe (struct pci_device *dev, int reg_num)
             if (err)
                 return err;
         }
-
-        /* Clear the map pointer */
-        dev->regions[reg_num].memory = 0;
     }
     else if (dev->regions[reg_num].size > 0)
     {
@@ -650,14 +647,10 @@ pci_device_x86_region_probe (struct pci_device *dev, int reg_num)
             if (err)
                 return err;
         }
-
-        /* Map the region in our space */
-	if ( (err = map_dev_mem(&dev->regions[reg_num].memory,
-                                dev->regions[reg_num].base_addr,
-                                dev->regions[reg_num].size,
-                                1)) )
-            return err;
     }
+
+    /* Clear the map pointer */
+    dev->regions[reg_num].memory = 0;
 
     return 0;
 }
