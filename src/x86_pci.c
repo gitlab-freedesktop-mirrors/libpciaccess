@@ -815,10 +815,6 @@ pci_system_x86_scan_bus (uint8_t bus)
 
             d->base.device_class = reg >> 8;
 
-            err = pci_device_x86_probe (&d->base);
-            if (err)
-                return err;
-
             pci_sys->devices = devices;
             pci_sys->num_devices++;
 
