@@ -254,7 +254,7 @@ map_dev_mem(void **dest, size_t mem_offset, size_t mem_size, int write)
 
     err = vm_map (mach_task_self (), (vm_address_t *)dest, mem_size,
                   (vm_address_t) 0, /* mask */
-                  *dest == 0, /* anywhere? */
+                  1, /* anywhere? */
                   pager, mem_offset,
                   0, /* copy */
                   prot, VM_PROT_ALL, VM_INHERIT_SHARE);
