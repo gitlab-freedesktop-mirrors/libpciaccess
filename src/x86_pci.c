@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2018 Damien Zammit
  * Copyright (c) 2017 Joan Lledó
- * Copyright (c) 2009, 2012 Samuel Thibault
+ * Copyright (c) 2009, 2012, 2020 Samuel Thibault
  * Heavily inspired from the freebsd, netbsd, and openbsd backends
  * (C) Copyright Eric Anholt 2006
  * (C) Copyright IBM Corporation 2006
@@ -228,6 +228,7 @@ map_dev_mem(void **dest, size_t mem_offset, size_t mem_size, int write)
     mach_port_t pager;
     dev_mode_t mode = D_READ;
     vm_prot_t prot = VM_PROT_READ;
+    int pagesize;
 
     if (get_privileged_ports (NULL, &master_device)) {
         *dest = 0;
@@ -242,6 +243,10 @@ map_dev_mem(void **dest, size_t mem_offset, size_t mem_size, int write)
     err = device_open (master_device, mode, "mem", &devmem);
     if (err)
         return err;
+
+    pagesize = getpagesize();
+    if (mem_size % pagesize)
+        mem_size += pagesize - (mem_size % pagesize);
 
     err = device_map (devmem, prot, 0x0, mem_size, &pager, 0);
     if (err)
