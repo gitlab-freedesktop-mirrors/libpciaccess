@@ -248,7 +248,8 @@ map_dev_mem(void **dest, size_t mem_offset, size_t mem_size, int write)
     if (mem_size % pagesize)
         mem_size += pagesize - (mem_size % pagesize);
 
-    err = device_map (devmem, prot, 0x0, mem_size, &pager, 0);
+    /* XXX: Mach should be fixed into supporting non-zero offset */
+    err = device_map (devmem, prot, 0x0, mem_offset + mem_size, &pager, 0);
     if (err)
         return err;
 
