@@ -54,7 +54,8 @@ libpciaccess = shared_library(
   ],
   include_directories : inc_include,
   dependencies : [dep_zlib, extra_libs],
-  version : '0.11.1'
+  version : '0.11.1',
+  install : true,
 )
 
 dep_pciaccess = declare_dependency(
