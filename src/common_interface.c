@@ -676,6 +676,16 @@ pci_device_enable(struct pci_device *dev)
 	pci_sys->methods->enable(dev);
 }
 
+void
+pci_device_disable(struct pci_device *dev)
+{
+	if (dev == NULL)
+		return;
+
+	if (pci_sys->methods->disable)
+		pci_sys->methods->disable(dev);
+}
+
 /**
  * Map the legacy memory space for the PCI domain containing \c dev.
  *

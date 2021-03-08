@@ -742,7 +742,7 @@ pci_device_linux_sysfs_unmap_range(struct pci_device *dev,
     return err;
 }
 
-static void pci_device_linux_sysfs_enable(struct pci_device *dev)
+static void pci_device_linux_sysfs_set_enable(struct pci_device *dev, int enable)
 {
     char name[256];
     int fd;
@@ -758,8 +758,18 @@ static void pci_device_linux_sysfs_enable(struct pci_device *dev)
     if (fd == -1)
        return;
 
-    write( fd, "1", 1 );
+    write( fd, enable ? "1" : "0" , 1 );
     close(fd);
+}
+
+static void pci_device_linux_sysfs_enable(struct pci_device *dev)
+{
+	return pci_device_linux_sysfs_set_enable(dev, 1);
+}
+
+static void pci_device_linux_sysfs_disable(struct pci_device *dev)
+{
+	return pci_device_linux_sysfs_set_enable(dev, 0);
 }
 
 static int pci_device_linux_sysfs_boot_vga(struct pci_device *dev)
@@ -1042,6 +1052,7 @@ static const struct pci_system_methods linux_sysfs_methods = {
 
     .fill_capabilities = pci_fill_capabilities_generic,
     .enable = pci_device_linux_sysfs_enable,
+    .disable = pci_device_linux_sysfs_disable,
     .boot_vga = pci_device_linux_sysfs_boot_vga,
     .has_kernel_driver = pci_device_linux_sysfs_has_kernel_driver,
 
