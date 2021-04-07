@@ -211,6 +211,28 @@ outl(uint32_t value, uint16_t port)
 
 #endif
 
+static int cmp_devices(const void *dev1, const void *dev2)
+{
+    const struct pci_device *d1 = dev1;
+    const struct pci_device *d2 = dev2;
+
+    if (d1->bus != d2->bus) {
+        return (d1->bus > d2->bus) ? 1 : -1;
+    }
+
+    if (d1->dev != d2->dev) {
+        return (d1->dev > d2->dev) ? 1 : -1;
+    }
+
+    return (d1->func > d2->func) ? 1 : -1;
+}
+
+static void
+sort_devices(void)
+{
+    qsort(pci_sys->devices, pci_sys->num_devices,
+          sizeof (pci_sys->devices[0]), &cmp_devices);
+}
 
 #if defined(__GNU__)
 #include <mach.h>
@@ -1202,10 +1224,15 @@ pci_system_x86_create(void)
     if (err)
     {
         x86_disable_io ();
+        if (pci_sys->num_devices)
+        {
+            free (pci_sys->devices);
+        }
         free (pci_sys);
         pci_sys = NULL;
         return err;
     }
 
+    sort_devices ();
     return 0;
 }
