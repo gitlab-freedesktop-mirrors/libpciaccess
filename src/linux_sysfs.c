@@ -336,9 +336,9 @@ pci_device_linux_sysfs_probe( struct pci_device * dev )
 		    dev->regions[i].size = (high_addr
 					    - dev->regions[i].base_addr) + 1;
 
-		    dev->regions[i].is_IO = (flags & 0x01);
-		    dev->regions[i].is_64 = (flags & 0x04);
-		    dev->regions[i].is_prefetchable = (flags & 0x08);
+		    dev->regions[i].is_IO = (flags & 0x01) != 0;
+		    dev->regions[i].is_64 = (flags & 0x04) != 0;
+		    dev->regions[i].is_prefetchable = (flags & 0x08) != 0;
 		}
 	    }
 
