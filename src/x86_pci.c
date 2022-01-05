@@ -263,6 +263,7 @@ map_dev_mem(void **dest, size_t mem_offset, size_t mem_size, int write)
     }
 
     err = device_open (master_device, mode, "mem", &devmem);
+    mach_port_deallocate (mach_task_self (), master_device);
     if (err)
         return err;
 
@@ -270,17 +271,21 @@ map_dev_mem(void **dest, size_t mem_offset, size_t mem_size, int write)
     if (mem_size % pagesize)
         mem_size += pagesize - (mem_size % pagesize);
 
-    /* XXX: Mach should be fixed into supporting non-zero offset */
-    err = device_map (devmem, prot, 0x0, mem_offset + mem_size, &pager, 0);
+    err = device_map (devmem, prot, mem_offset, mem_size, &pager, 0);
+    device_close (devmem);
+    mach_port_deallocate (mach_task_self (), devmem);
     if (err)
         return err;
 
     err = vm_map (mach_task_self (), (vm_address_t *)dest, mem_size,
                   (vm_address_t) 0, /* mask */
                   1, /* anywhere? */
-                  pager, mem_offset,
+                  pager, 0,
                   0, /* copy */
                   prot, VM_PROT_ALL, VM_INHERIT_SHARE);
+    mach_port_deallocate (mach_task_self (), pager);
+    if (err)
+        return err;
 
     return err;
 #else
@@ -908,19 +913,19 @@ pci_device_x86_unmap_range(struct pci_device *dev,
 
 #else
 
-int
+static int
 pci_device_x86_map_range(struct pci_device *dev,
     struct pci_device_mapping *map)
 {
     int err;
-    if ( (err = map_dev_mem(&map->memory, map->base,
-                            map->size, map->flags & PCI_DEV_MAP_FLAG_WRITABLE)) )
+    if ( (err = map_dev_mem(&map->memory, map->base, map->size,
+                            map->flags & PCI_DEV_MAP_FLAG_WRITABLE)))
         return err;
 
     return 0;
 }
 
-int
+static int
 pci_device_x86_unmap_range(struct pci_device *dev,
     struct pci_device_mapping *map)
 {
@@ -1099,7 +1104,7 @@ pci_device_x86_write8(struct pci_io_handle *handle, uint32_t reg,
     outb(data, reg + handle->base);
 }
 
-int
+static int
 pci_device_x86_map_legacy(struct pci_device *dev, pciaddr_t base,
     pciaddr_t size, unsigned map_flags, void **addr)
 {
@@ -1115,7 +1120,7 @@ pci_device_x86_map_legacy(struct pci_device *dev, pciaddr_t base,
     return err;
 }
 
-int
+static int
 pci_device_x86_unmap_legacy(struct pci_device *dev, void *addr,
     pciaddr_t size)
 {

@@ -55,6 +55,7 @@
 
 /* File names */
 #define FILE_CONFIG_NAME "config"
+#define FILE_REGION_NAME "region"
 #define FILE_ROM_NAME "rom"
 
 /* Level in the fs tree */
@@ -149,8 +150,119 @@ pci_device_hurd_probe(struct pci_device *dev)
     return 0;
 }
 
+static int
+pci_device_hurd_map_range(struct pci_device *dev,
+    struct pci_device_mapping *map)
+{
+    int err = 0;
+    file_t file = MACH_PORT_NULL;
+    memory_object_t robj, wobj, pager;
+    vm_offset_t offset;
+    vm_prot_t prot = VM_PROT_READ;
+    const struct pci_mem_region * const region = &dev->regions[map->region];
+    int flags = O_RDONLY;
+    char server[NAME_MAX];
+
+    if (map->flags & PCI_DEV_MAP_FLAG_WRITABLE) {
+        prot |= VM_PROT_WRITE;
+        flags = O_RDWR;
+    }
+
+    snprintf(server, NAME_MAX, "%s/%04x/%02x/%02x/%01u/%s%01u",
+            _SERVERS_BUS_PCI, dev->domain, dev->bus, dev->dev, dev->func,
+            FILE_REGION_NAME, map->region);
+
+    file = file_name_lookup (server, flags, 0);
+    if (! MACH_PORT_VALID (file)) {
+        return errno;
+    }
+
+    err = io_map (file, &robj, &wobj);
+    mach_port_deallocate (mach_task_self(), file);
+    if (err)
+        return err;
+
+    switch (prot & (VM_PROT_READ|VM_PROT_WRITE)) {
+    case VM_PROT_READ:
+        pager = robj;
+        if (wobj != MACH_PORT_NULL)
+            mach_port_deallocate (mach_task_self(), wobj);
+        break;
+    case VM_PROT_READ|VM_PROT_WRITE:
+        if (robj == wobj) {
+            if (robj == MACH_PORT_NULL)
+                return EPERM;
+
+            pager = wobj;
+            /* Remove extra reference.  */
+            mach_port_deallocate (mach_task_self (), pager);
+        }
+        else {
+            if (robj != MACH_PORT_NULL)
+                mach_port_deallocate (mach_task_self (), robj);
+            if (wobj != MACH_PORT_NULL)
+                mach_port_deallocate (mach_task_self (), wobj);
+
+            return EPERM;
+        }
+        break;
+    default:
+        return EINVAL;
+    }
+
+    offset = map->base - region->base_addr;
+    err = vm_map (mach_task_self (), (vm_address_t *)&map->memory, map->size,
+                  0, 1,
+                  pager, /* a memory object proxy containing only the region */
+                  offset, /* offset from region start */
+                  0, prot, VM_PROT_ALL, VM_INHERIT_SHARE);
+    mach_port_deallocate (mach_task_self(), pager);
+
+    return err;
+}
+
+static int
+pci_device_hurd_unmap_range(struct pci_device *dev,
+    struct pci_device_mapping *map)
+{
+    int err;
+    err = pci_device_generic_unmap_range(dev, map);
+    map->memory = NULL;
+
+    return err;
+}
+
+static int
+pci_device_hurd_map_legacy(struct pci_device *dev, pciaddr_t base,
+    pciaddr_t size, unsigned map_flags, void **addr)
+{
+    struct pci_device_mapping map;
+    int err;
+
+    map.base = base;
+    map.size = size;
+    map.flags = map_flags;
+    err = pci_device_hurd_map_range(dev, &map);
+    *addr = map.memory;
+
+    return err;
+}
+
+static int
+pci_device_hurd_unmap_legacy(struct pci_device *dev, void *addr,
+    pciaddr_t size)
+{
+    struct pci_device_mapping map;
+
+    map.size = size;
+    map.flags = 0;
+    map.memory = addr;
+
+    return pci_device_hurd_unmap_range(dev, &map);
+}
+
 /*
- * Read `nbytes' bytes from `reg' in device's configuretion space
+ * Read `nbytes' bytes from `reg' in device's configuration space
  * and store them in `buf'.
  *
  * It's assumed that `nbytes' bytes are allocated in `buf'
@@ -339,7 +451,8 @@ enum_devices(mach_port_t pci_port, const char *parent, int domain,
     if (lev > LEVEL_FUNC + 1) {
         return 0;
     }
-    cwd_port = file_name_lookup_under (pci_port, parent, O_DIRECTORY | O_RDWR | O_EXEC, 0);
+    cwd_port = file_name_lookup_under (pci_port, parent,
+                                       O_DIRECTORY | O_RDONLY | O_EXEC, 0);
     if (cwd_port == MACH_PORT_NULL) {
         return 0;
     }
@@ -391,7 +504,7 @@ enum_devices(mach_port_t pci_port, const char *parent, int domain,
             snprintf(server, NAME_MAX, "./%04x/%02x/%02x/%01u/%s",
                      domain, bus, dev, func,
                      entry->d_name);
-            device_port = file_name_lookup_under(pci_port, server, O_RDWR, 0);
+            device_port = file_name_lookup_under(pci_port, server, O_RDONLY, 0);
             if (device_port == MACH_PORT_NULL) {
                 return 0;
             }
@@ -461,6 +574,7 @@ enum_devices(mach_port_t pci_port, const char *parent, int domain,
             pci_sys->num_devices++;
         }
     }
+    mach_port_deallocate (mach_task_self (), cwd_port);
 
     return 0;
 }
@@ -470,8 +584,8 @@ static const struct pci_system_methods hurd_pci_methods = {
     .destroy_device = pci_device_hurd_destroy_device,
     .read_rom = pci_device_hurd_read_rom,
     .probe = pci_device_hurd_probe,
-    .map_range = pci_device_x86_map_range,
-    .unmap_range = pci_device_x86_unmap_range,
+    .map_range = pci_device_hurd_map_range,
+    .unmap_range = pci_device_hurd_unmap_range,
     .read = pci_device_hurd_read,
     .write = pci_device_hurd_write,
     .fill_capabilities = pci_fill_capabilities_generic,
@@ -483,8 +597,8 @@ static const struct pci_system_methods hurd_pci_methods = {
     .write32 = pci_device_x86_write32,
     .write16 = pci_device_x86_write16,
     .write8 = pci_device_x86_write8,
-    .map_legacy = pci_device_x86_map_legacy,
-    .unmap_legacy = pci_device_x86_unmap_legacy,
+    .map_legacy = pci_device_hurd_map_legacy,
+    .unmap_legacy = pci_device_hurd_unmap_legacy,
 };
 
 /* Get the name of the server using libpciaccess if any */
@@ -523,18 +637,18 @@ pci_system_hurd_create(void)
 
     pci_sys->num_devices = 0;
 
-    if ((err = get_privileged_ports (NULL, &device_master)) || (device_master == MACH_PORT_NULL)) {
-        pci_system_cleanup();
-        return err;
-    }
-
-    err = device_open (device_master, D_READ|D_WRITE, "pci", &pci_port);
-    if (!err) {
-        root = file_name_lookup_under (pci_port, ".", O_DIRECTORY | O_RDWR | O_EXEC, 0);
-    }
-
-    if (!root) {
-        root = file_name_lookup (_SERVERS_BUS_PCI, O_RDWR, 0);
+    if ((err = get_privileged_ports (NULL, &device_master))
+            || (device_master == MACH_PORT_NULL)) {
+        root = file_name_lookup (_SERVERS_BUS_PCI, O_RDONLY, 0);
+    } else {
+        err = device_open (device_master, D_READ, "pci", &pci_port);
+        mach_port_deallocate (mach_task_self (), device_master);
+        if (!err) {
+            root = file_name_lookup_under (pci_port, ".",
+                                           O_DIRECTORY | O_RDONLY | O_EXEC, 0);
+            device_close (pci_port);
+            mach_port_deallocate (mach_task_self (), pci_port);
+        }
     }
 
     if (!root) {
@@ -543,6 +657,7 @@ pci_system_hurd_create(void)
     }
 
     err = enum_devices (root, ".", -1, -1, -1, -1, LEVEL_DOMAIN);
+    mach_port_deallocate (mach_task_self (), root);
     if (err) {
         pci_system_cleanup();
         return err;
