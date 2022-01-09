@@ -637,18 +637,20 @@ pci_system_hurd_create(void)
 
     pci_sys->num_devices = 0;
 
-    if ((err = get_privileged_ports (NULL, &device_master))
-            || (device_master == MACH_PORT_NULL)) {
-        root = file_name_lookup (_SERVERS_BUS_PCI, O_RDONLY, 0);
-    } else {
-        err = device_open (device_master, D_READ, "pci", &pci_port);
-        mach_port_deallocate (mach_task_self (), device_master);
-        if (!err) {
-            root = file_name_lookup_under (pci_port, ".",
-                                           O_DIRECTORY | O_RDONLY | O_EXEC, 0);
-            device_close (pci_port);
-            mach_port_deallocate (mach_task_self (), pci_port);
-        }
+    if ((err = get_privileged_ports (NULL, &device_master)) || (device_master == MACH_PORT_NULL)) {
+        pci_system_cleanup();
+        return err;
+    }
+
+    err = device_open (device_master, D_READ|D_WRITE, "pci", &pci_port);
+    if (!err) {
+        root = file_name_lookup_under (pci_port, ".", O_DIRECTORY | O_RDWR | O_EXEC, 0);
+        device_close (pci_port);
+        mach_port_deallocate (mach_task_self (), pci_port);
+    }
+
+    if (!root) {
+        root = file_name_lookup (_SERVERS_BUS_PCI, O_RDWR, 0);
     }
 
     if (!root) {
