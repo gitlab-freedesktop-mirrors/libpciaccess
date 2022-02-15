@@ -69,6 +69,7 @@ typedef enum {
 
 struct pci_system_hurd {
     struct pci_system system;
+    mach_port_t root;
 };
 
 static int
@@ -150,10 +151,20 @@ pci_device_hurd_probe(struct pci_device *dev)
     return 0;
 }
 
+static void
+pci_system_hurd_destroy(void)
+{
+    struct pci_system_hurd *pci_sys_hurd = (struct pci_system_hurd *)pci_sys;
+
+    x86_disable_io();
+    mach_port_deallocate(mach_task_self(), pci_sys_hurd->root);
+}
+
 static int
 pci_device_hurd_map_range(struct pci_device *dev,
     struct pci_device_mapping *map)
 {
+    struct pci_system_hurd *pci_sys_hurd = (struct pci_system_hurd *)pci_sys;
     int err = 0;
     file_t file = MACH_PORT_NULL;
     memory_object_t robj, wobj, pager;
@@ -168,11 +179,11 @@ pci_device_hurd_map_range(struct pci_device *dev,
         flags = O_RDWR;
     }
 
-    snprintf(server, NAME_MAX, "%s/%04x/%02x/%02x/%01u/%s%01u",
-            _SERVERS_BUS_PCI, dev->domain, dev->bus, dev->dev, dev->func,
-            FILE_REGION_NAME, map->region);
+    snprintf(server, NAME_MAX, "%04x/%02x/%02x/%01u/%s%01u",
+             dev->domain, dev->bus, dev->dev, dev->func,
+             FILE_REGION_NAME, map->region);
 
-    file = file_name_lookup (server, flags, 0);
+    file = file_name_lookup_under (pci_sys_hurd->root, server, flags, 0);
     if (! MACH_PORT_VALID (file)) {
         return errno;
     }
@@ -580,7 +591,7 @@ enum_devices(mach_port_t pci_port, const char *parent, int domain,
 }
 
 static const struct pci_system_methods hurd_pci_methods = {
-    .destroy = pci_system_x86_destroy,
+    .destroy = pci_system_hurd_destroy,
     .destroy_device = pci_device_hurd_destroy_device,
     .read_rom = pci_device_hurd_read_rom,
     .probe = pci_device_hurd_probe,
@@ -658,8 +669,8 @@ pci_system_hurd_create(void)
         return errno;
     }
 
+    pci_sys_hurd->root = root;
     err = enum_devices (root, ".", -1, -1, -1, -1, LEVEL_DOMAIN);
-    mach_port_deallocate (mach_task_self (), root);
     if (err) {
         pci_system_cleanup();
         return err;
