@@ -621,7 +621,8 @@ pci_system_hurd_create(void)
 {
     int err;
     struct pci_system_hurd *pci_sys_hurd;
-    mach_port_t device_master, pci_port;
+    mach_port_t device_master;
+    mach_port_t pci_port = MACH_PORT_NULL;
     mach_port_t root = MACH_PORT_NULL;
 
     if (&netfs_server_name && netfs_server_name
@@ -648,23 +649,24 @@ pci_system_hurd_create(void)
 
     pci_sys->num_devices = 0;
 
-    if ((err = get_privileged_ports (NULL, &device_master)) || (device_master == MACH_PORT_NULL)) {
-        pci_system_cleanup();
-        return err;
+    err = get_privileged_ports (NULL, &device_master);
+
+    if(!err && device_master != MACH_PORT_NULL) {
+        err = device_open (device_master, D_READ, "pci", &pci_port);
+	mach_port_deallocate (mach_task_self (), device_master);
     }
 
-    err = device_open (device_master, D_READ|D_WRITE, "pci", &pci_port);
-    if (!err) {
-        root = file_name_lookup_under (pci_port, ".", O_DIRECTORY | O_RDWR | O_EXEC, 0);
+    if (!err && pci_port != MACH_PORT_NULL) {
+        root = file_name_lookup_under (pci_port, ".", O_DIRECTORY | O_RDONLY | O_EXEC, 0);
         device_close (pci_port);
         mach_port_deallocate (mach_task_self (), pci_port);
     }
 
-    if (!root) {
-        root = file_name_lookup (_SERVERS_BUS_PCI, O_RDWR, 0);
+    if (root == MACH_PORT_NULL) {
+        root = file_name_lookup (_SERVERS_BUS_PCI, O_RDONLY, 0);
     }
 
-    if (!root) {
+    if (root == MACH_PORT_NULL) {
         pci_system_cleanup();
         return errno;
     }
