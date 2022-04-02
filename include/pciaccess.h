@@ -383,7 +383,7 @@ struct pci_device {
     /**
      * Storage for user data.  Users of the library can store arbitrary
      * data in this pointer.  The library will not use it for any purpose.
-     * It is the user's responsability to free this memory before destroying
+     * It is the user's responsibility to free this memory before destroying
      * the \c pci_device structure.
      */
     intptr_t user_data;
@@ -513,7 +513,7 @@ struct pci_pcmcia_bridge_info {
 int  pci_device_vgaarb_init         (void);
 void pci_device_vgaarb_fini         (void);
 int  pci_device_vgaarb_set_target   (struct pci_device *dev);
-/* use the targetted device */
+/* use the targeted device */
 int  pci_device_vgaarb_decodes      (int new_vga_rsrc);
 int  pci_device_vgaarb_lock         (void);
 int  pci_device_vgaarb_trylock      (void);
