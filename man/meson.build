@@ -26,7 +26,7 @@ custom_target(
     find_program('sed'), '-e', 's/__xorgversion__/X Version 11/', '@INPUT@',
   ],
   capture : true,
-  install : true,
-  install_dir : join_paths(get_option('prefix'), get_option('mandir'), '1'),
+  install : false,
+  install_dir : join_paths(get_option('prefix'), get_option('mandir'), 'man1'),
 )
 
