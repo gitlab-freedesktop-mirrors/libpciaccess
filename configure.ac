@@ -40,6 +40,7 @@ m4_ifndef([XORG_MACROS_VERSION],
           [m4_fatal([must install xorg-macros 1.8 or later before running autoconf/autogen])])
 XORG_MACROS_VERSION(1.8)
 XORG_DEFAULT_OPTIONS
+PKG_PROG_PKG_CONFIG
 
 pciids_path=/usr/share/hwdata
 AC_ARG_WITH(pciids-path, AS_HELP_STRING([--with-pciids-path=PCIIDS_PATH],
@@ -59,12 +60,10 @@ AC_ARG_WITH(zlib, AS_HELP_STRING([--with-zlib],
 	[Enable zlib support to read gzip compressed pci.ids]),
 	[use_zlib="$withval"])
 if test "x$use_zlib" = xyes; then
-	AC_CHECK_LIB(z, gzopen,
-	[PCIACCESS_LIBS="$PCIACCESS_LIBS -lz"],
-	[AC_MSG_ERROR(Check for zlib library failed)])
-	AC_CHECK_HEADER([zlib.h],
-	[AC_DEFINE(HAVE_ZLIB, 1, [Use zlib to read gzip compressed pci.ids])],
-	[AC_MSG_ERROR(Check for zlib.h header file failed)])
+	PKG_CHECK_MODULES([ZLIB], [zlib])
+	PCIACCESS_CFLAGS="$PCIACCESS_CFLAGS $ZLIB_CFLAGS"
+	PCIACCESS_LIBS="$PCIACCESS_LIBS $ZLIB_LIBS"
+	AC_DEFINE(HAVE_ZLIB, 1, [Use zlib to read gzip compressed pci.ids])
 fi
 
 case $host_os in
