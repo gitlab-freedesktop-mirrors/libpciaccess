@@ -58,6 +58,8 @@
 #define FILE_REGION_NAME "region"
 #define FILE_ROM_NAME "rom"
 
+#define LEGACY_REGION -1
+
 /* Level in the fs tree */
 typedef enum {
     LEVEL_NONE,
@@ -164,13 +166,27 @@ static int
 pci_device_hurd_map_range(struct pci_device *dev,
     struct pci_device_mapping *map)
 {
+#if 0
+    struct pci_device_private *d = (struct pci_device_private *)dev;
+#endif
     struct pci_system_hurd *pci_sys_hurd = (struct pci_system_hurd *)pci_sys;
     int err = 0;
     file_t file = MACH_PORT_NULL;
     memory_object_t robj, wobj, pager;
     vm_offset_t offset;
     vm_prot_t prot = VM_PROT_READ;
-    const struct pci_mem_region * const region = &dev->regions[map->region];
+    const struct pci_mem_region *region;
+    const struct pci_mem_region rom_region = {
+#if 0
+    /* FIXME: We should be doing this: */
+        .base_addr = d->rom_base,
+    /* But currently pci-arbiter cannot get rom_base from libpciaccess, so we
+       are here assuming the caller is mapping from the rom base */
+#else
+        .base_addr = map->base,
+#endif
+        .size = dev->rom_size,
+    };
     int flags = O_RDONLY;
     char server[NAME_MAX];
 
@@ -179,9 +195,20 @@ pci_device_hurd_map_range(struct pci_device *dev,
         flags = O_RDWR;
     }
 
-    snprintf(server, NAME_MAX, "%04x/%02x/%02x/%01u/%s%01u",
-             dev->domain, dev->bus, dev->dev, dev->func,
-             FILE_REGION_NAME, map->region);
+    if (map->region != LEGACY_REGION) {
+      region = &dev->regions[map->region];
+      snprintf(server, NAME_MAX, "%04x/%02x/%02x/%01u/%s%01u",
+	       dev->domain, dev->bus, dev->dev, dev->func,
+	       FILE_REGION_NAME, map->region);
+    } else {
+      region = &rom_region;
+      snprintf(server, NAME_MAX, "%04x/%02x/%02x/%01u/%s",
+	       dev->domain, dev->bus, dev->dev, dev->func,
+	       FILE_ROM_NAME);
+      if (map->base < region->base_addr ||
+	  map->base + map->size > region->base_addr + region->size)
+	return EINVAL;
+    }
 
     file = file_name_lookup_under (pci_sys_hurd->root, server, flags, 0);
     if (! MACH_PORT_VALID (file)) {
@@ -250,13 +277,25 @@ pci_device_hurd_map_legacy(struct pci_device *dev, pciaddr_t base,
     struct pci_device_mapping map;
     int err;
 
-    map.base = base;
-    map.size = size;
-    map.flags = map_flags;
-    err = pci_device_hurd_map_range(dev, &map);
-    *addr = map.memory;
+    if (base >= 0xC0000 && base < 0x100000) {
+      /* FIXME: We would rather know for sure from d->rom_base whether this is
+         the ROM or not but currently pci-arbiter cannot get rom_base from
+         libpciaccess, so we are here assuming the caller is mapping from the
+         rom base */
+      map.base = base;
+      map.size = size;
+      map.flags = map_flags;
+      map.region = LEGACY_REGION;
+      err = pci_device_hurd_map_range(dev, &map);
+      *addr = map.memory;
 
-    return err;
+      if (!err)
+	return 0;
+    }
+
+    /* This is probably not the ROM, this is probably something like VRam or
+       the interrupt table, just map it by hand.  */
+    return pci_system_x86_map_dev_mem(addr, base, size, !!(map_flags & PCI_DEV_MAP_FLAG_WRITABLE));
 }
 
 static int
@@ -267,6 +306,7 @@ pci_device_hurd_unmap_legacy(struct pci_device *dev, void *addr,
 
     map.size = size;
     map.flags = 0;
+    map.region = LEGACY_REGION;
     map.memory = addr;
 
     return pci_device_hurd_unmap_range(dev, &map);

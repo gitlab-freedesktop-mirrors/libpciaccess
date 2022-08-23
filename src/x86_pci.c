@@ -240,8 +240,8 @@ sort_devices(void)
 #include <device/device.h>
 #endif
 
-static int
-map_dev_mem(void **dest, size_t mem_offset, size_t mem_size, int write)
+int
+pci_system_x86_map_dev_mem(void **dest, size_t mem_offset, size_t mem_size, int write)
 {
 #if defined(__GNU__)
     int err;
@@ -543,7 +543,7 @@ pci_device_x86_read_rom(struct pci_device *dev, void *buffer)
     struct pci_device_private *d = (struct pci_device_private *)dev;
 
     int err;
-    if ( (err = map_dev_mem(&bios, d->rom_base, dev->rom_size, 0)) )
+    if ( (err = pci_system_x86_map_dev_mem(&bios, d->rom_base, dev->rom_size, 0)) )
         return err;
 
     memcpy(buffer, bios, dev->rom_size);
@@ -918,7 +918,7 @@ pci_device_x86_map_range(struct pci_device *dev,
     struct pci_device_mapping *map)
 {
     int err;
-    if ( (err = map_dev_mem(&map->memory, map->base, map->size,
+    if ( (err = pci_system_x86_map_dev_mem(&map->memory, map->base, map->size,
                             map->flags & PCI_DEV_MAP_FLAG_WRITABLE)))
         return err;
 

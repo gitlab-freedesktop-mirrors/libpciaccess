@@ -76,5 +76,7 @@ void pci_device_x86_write16(struct pci_io_handle *handle, uint32_t reg,
 		       uint16_t data);
 void pci_device_x86_write8(struct pci_io_handle *handle, uint32_t reg,
 		       uint8_t data);
+int pci_system_x86_map_dev_mem(void **dest, size_t mem_offset, size_t mem_size,
+    int write);
 
 #endif /* X86_PCI_H */
