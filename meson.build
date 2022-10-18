@@ -21,7 +21,7 @@
 project(
   'libpciaccess',
   ['c'],
-  version : '0.16',
+  version : '0.17',
   license : 'MIT',
   meson_version : '>= 0.48.0',
   default_options : ['buildtype=debugoptimized'],
