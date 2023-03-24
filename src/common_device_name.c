@@ -86,6 +86,9 @@ pci_id_file_open(void)
     result = fopen(PCIIDS_PATH "/pci.ids", "re");
     if (result)
         return result;
+#ifdef __FreeBSD__
+    return fopen("/usr/share/misc/pci_vendors", "re");
+#endif
 #endif
 
     return fopen(PCIIDS_PATH "/pci.ids", "r");
