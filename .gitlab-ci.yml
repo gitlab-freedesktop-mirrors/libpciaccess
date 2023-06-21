@@ -94,7 +94,7 @@ meson:
       - MESON_OPTIONS: ['-Dzlib=disabled', '-Dzlib=enabled']
   script:
     - mkdir -p ../_inst
-    - meson builddir --prefix="$PWD/../_inst" -Dwarning_level=3 $MESON_OPTIONS
+    - meson setup builddir --prefix="$PWD/../_inst" -Dwarning_level=3 $MESON_OPTIONS
     - meson configure builddir
     - ninja -C builddir test
     - ninja -C builddir install
@@ -128,7 +128,7 @@ meson from tarball:
     - mkdir -p _tarball_build
     - tar xf libpciaccess-*.tar.gz -C _tarball_build
     - pushd _tarball_build/libpciaccess-*
-    - meson builddir
+    - meson setup builddir
     - meson configure builddir
     - ninja -C builddir test
   needs:
@@ -152,7 +152,7 @@ compare meson and autotools:
     # the prefix ends up in the pkgconfig files, so we use a symlink
     # to use the same --prefix for meson and autotools
     - ln -sf $PWD/_meson_inst $PWD/_inst
-    - meson builddir
+    - meson setup builddir
     - meson configure builddir --prefix=$PWD/_inst
     - ninja -C builddir install
     - ls -R _inst > _meson_inst.ls
@@ -173,7 +173,7 @@ check versions are in sync:
     - autoreconf -ivf
     - ./configure --version | head -n 1 | sed -e 's/libpciaccess configure //' > autotools.version
     - |
-      meson builddir
+      meson setup builddir
       pushd builddir
       meson introspect --projectinfo | jq -r '.version' > ../meson.version
       popd
