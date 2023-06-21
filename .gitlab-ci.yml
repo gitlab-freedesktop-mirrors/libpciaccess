@@ -152,8 +152,7 @@ compare meson and autotools:
     # the prefix ends up in the pkgconfig files, so we use a symlink
     # to use the same --prefix for meson and autotools
     - ln -sf $PWD/_meson_inst $PWD/_inst
-    - meson setup builddir
-    - meson configure builddir --prefix=$PWD/_inst
+    - meson setup builddir --prefix=$PWD/_inst
     - ninja -C builddir install
     - ls -R _inst > _meson_inst.ls
     - rm $PWD/_inst
