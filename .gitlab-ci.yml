@@ -172,9 +172,5 @@ check versions are in sync:
   script:
     - autoreconf -ivf
     - ./configure --version | head -n 1 | sed -e 's/libpciaccess configure //' > autotools.version
-    - |
-      meson setup builddir
-      pushd builddir
-      meson introspect --projectinfo | jq -r '.version' > ../meson.version
-      popd
+    - meson introspect meson.build --projectinfo | jq -r '.version' > meson.version
     - diff -u autotools.version meson.version || (echo "ERROR - autotools and meson versions not in sync" && false)
