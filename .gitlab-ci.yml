@@ -91,7 +91,7 @@ meson:
       - MESON_OPTIONS: ['-Dzlib=disabled', '-Dzlib=enabled']
   script:
     - mkdir -p ../_inst
-    - meson setup builddir --prefix="$PWD/../_inst" -Dwarning_level=3 $MESON_OPTIONS
+    - meson setup builddir --prefix="$PWD/../_inst" -Dwarning_level=3 -Ddefault_library=both $MESON_OPTIONS
     - meson configure builddir
     - ninja -C builddir test
     - ninja -C builddir install
