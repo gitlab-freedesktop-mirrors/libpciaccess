@@ -95,3 +95,8 @@ meson:
     - meson configure builddir
     - ninja -C builddir test
     - ninja -C builddir install
+
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
+    - if: $CI_PIPELINE_SOURCE == 'push'
