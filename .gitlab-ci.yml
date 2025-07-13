@@ -88,7 +88,7 @@ meson:
   stage: build
   parallel:
     matrix:
-      - MESON_OPTIONS: ['-Dzlib=disabled', '-Dzlib=enabled']
+      - MESON_OPTIONS: ['-Dzlib=disabled', '-Dzlib=enabled', '-Dinstall-scanpci=true']
   script:
     - mkdir -p ../_inst
     - meson setup builddir --prefix="$PWD/../_inst" -Dwarning_level=3 -Ddefault_library=both $MESON_OPTIONS
